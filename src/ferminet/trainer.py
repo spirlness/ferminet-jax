@@ -99,7 +99,7 @@ class VMCTrainer:
 
         # Batched local energy function (no param mutation)
         def network_forward(params, r_batch):
-            return self.network(r_batch)
+            return self.network.apply(params, r_batch)
 
         self._batched_local_energy = make_batched_local_energy(
             network_forward, n_electrons=self.network.n_electrons
