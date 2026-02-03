@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(dir \"G:\\\\FermiNet\")",
+      "Bash(tree:*)",
+      "Bash(pip install:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "mcp__huggingface__*",
+      "mcp__github__*",
+      "Bash(grep:*)",
+      "Bash(cat:*)"
+    ]
+  },
+  "mcpServers": {
+    "huggingface": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-huggingface"
+      ],
+      "env": {}
+    },
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": ""
+      }
+    }
+  }
+}

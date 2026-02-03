@@ -1,0 +1,18 @@
+{
+    "metadata": {
+        "device": "TFRT_CPU_0",
+        "n_samples": 256,
+        "n_epochs": 5,
+        "timestamp": "2026-02-03 18:37:52"
+    },
+    "averages": {
+        "forward_ms": 99.32651666652721,
+        "mcmc_ms": 295.29100000017934,
+        "energy_grad_ms": 1.145820000238018,
+        "adam_ms": 0.20758000009664102,
+        "train_step_ms": 300.2833800001099
+    },
+    "std_dev": {
+        "train_step_ms": 4.170097246568795
+    }
+}
