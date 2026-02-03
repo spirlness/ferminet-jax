@@ -254,17 +254,17 @@ class MultiDeterminantOrbitals:
             log|determinant| [batch]
         """
         if spin_group == 'up':
-            # First n_up rows (spin-up electrons)
+            # First n_up rows and columns (spin-up electrons and orbitals)
             n_spin = self.n_up
             start_idx = 0
         else:
-            # Last n_down rows (spin-down electrons)
+            # Last n_down rows and columns (spin-down electrons and orbitals)
             n_spin = self.n_down
             start_idx = self.n_up
 
-        # Extract spin block
+        # Extract spin block (both rows and columns)
         if n_spin > 0:
-            spin_orbitals = orbitals[:, start_idx:start_idx + n_spin, :]
+            spin_orbitals = orbitals[:, start_idx:start_idx + n_spin, start_idx:start_idx + n_spin]
             # Use slogdet for numerical stability
             # returns (sign, logabsdet)
             _, log_det = jax.vmap(jnp.linalg.slogdet)(spin_orbitals)

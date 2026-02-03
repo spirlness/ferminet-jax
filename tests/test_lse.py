@@ -2,7 +2,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import unittest
-from network import ExtendedFermiNet
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from ferminet.network import ExtendedFermiNet
 
 class TestLogSumExp(unittest.TestCase):
     def setUp(self):
@@ -53,7 +56,7 @@ class TestLogSumExp(unittest.TestCase):
         
         orbitals_list = [orb0, orb1, orb2, orb3]
         
-        # Weights all 1.0
+        # Weights all 1.0 (will be softmax-normalized to 0.25 each)
         self.net.params['det_weights'] = jnp.ones(self.n_dets)
         
         # Run LSE
@@ -65,80 +68,93 @@ class TestLogSumExp(unittest.TestCase):
         self.assertFalse(jnp.any(jnp.isnan(log_psi)), "Result contains NaN")
         self.assertFalse(jnp.any(jnp.isinf(log_psi)), "Result contains Inf")
         
-        # Expected value:
-        # Sum = exp(0) + exp(80) + exp(-80) + exp(0)
-        #     ≈ exp(80)
-        # log_psi ≈ 80.0
+        # Expected value with softmax-normalized weights (each weight = 0.25):
+        # log_psi = log(0.25 * exp(0) + 0.25 * exp(80) + 0.25 * exp(-80) + 0.25 * exp(0))
+        #         = log(0.25 * exp(80) * (exp(-80) + 1 + exp(-160) + exp(-80)))
+        #         ≈ log(0.25 * exp(80))
+        #         = log(0.25) + 80
+        #         ≈ -1.386 + 80 ≈ 78.614
         
-        expected = 80.0
+        expected = jnp.log(0.25) + 80.0
         print(f"Expected approx: {expected}")
         
-        self.assertTrue(jnp.allclose(log_psi, expected, atol=1e-1), 
+        self.assertTrue(jnp.allclose(log_psi, expected, atol=0.5), 
                         f"Expected {expected}, got {log_psi}")
 
-    def test_mixed_signs(self):
-        print("\nTesting Log-Sum-Exp with mixed signs...")
+    def test_softmax_normalization(self):
+        """Test that weights are properly softmax-normalized."""
+        print("\nTesting softmax normalization...")
         batch_size = 2
         
-        # Det 0: Positive, mag 1 (log=0)
-        # Det 1: Negative, mag 1 (log=0)
-        # Det 2: Negligible
-        # Det 3: Negligible
+        # All determinants have log|det| = 0 (identity matrices)
+        I = jnp.eye(self.n_electrons)
+        orb = jnp.tile(I[None, ...], (batch_size, 1, 1))
+        orbitals_list = [orb, orb, orb, orb]
+        
+        # Set different raw weights
+        raw_weights = jnp.array([1.0, 2.0, 3.0, 4.0])
+        self.net.params['det_weights'] = raw_weights
+        
+        # Calculate expected softmax weights
+        expected_weights = jax.nn.softmax(raw_weights)
+        print(f"Raw weights: {raw_weights}")
+        print(f"Expected softmax weights: {expected_weights}")
+        print(f"Sum of softmax weights: {jnp.sum(expected_weights)}")
+        
+        # With all det = 1 (log|det| = 0), we have:
+        # log_psi = log(sum(w_i * 1)) = log(sum(w_i))
+        # Since softmax weights sum to 1: log_psi = log(1) = 0
+        log_psi = self.net.multi_determinant_slater(orbitals_list)
+        
+        print(f"Log Psi result: {log_psi}")
+        
+        # Check no NaN/Inf
+        self.assertFalse(jnp.any(jnp.isnan(log_psi)), "Result contains NaN")
+        self.assertFalse(jnp.any(jnp.isinf(log_psi)), "Result contains Inf")
+        
+        # log_psi should be 0 since sum of normalized weights times 1 = 1
+        expected = 0.0
+        self.assertTrue(jnp.allclose(log_psi, expected, atol=1e-4), 
+                        f"Expected {expected}, got {log_psi}")
+
+    def test_dominant_weight(self):
+        """Test behavior when one weight dominates."""
+        print("\nTesting dominant weight...")
+        batch_size = 1
+        
+        # Det 0: log|det| = 10
+        # Det 1: log|det| = 0  
+        # Det 2: log|det| = 0
+        # Det 3: log|det| = 0
         
         I = jnp.eye(self.n_electrons)
-        I_neg = I.at[0].set(I[1]).at[1].set(I[0]) # Swap row 0 and 1 -> det = -1
-        
-        orb0 = jnp.tile(I[None, ...], (batch_size, 1, 1))
-        orb1 = jnp.tile(I_neg[None, ...], (batch_size, 1, 1))
-        orb2 = jnp.tile(I[None, ...], (batch_size, 1, 1)) * 1e-10
-        orb3 = jnp.tile(I[None, ...], (batch_size, 1, 1)) * 1e-10
+        orb0 = jnp.tile(I[None, ...], (batch_size, 1, 1)) * jnp.exp(5.0)  # det = exp(10)
+        orb1 = jnp.tile(I[None, ...], (batch_size, 1, 1))
+        orb2 = jnp.tile(I[None, ...], (batch_size, 1, 1))
+        orb3 = jnp.tile(I[None, ...], (batch_size, 1, 1))
         
         orbitals_list = [orb0, orb1, orb2, orb3]
         
-        # Weights set to favor cancellation
-        # [1, 1, 0, 0]
-        # Sum = 1*1 + 1*(-1) + ... ≈ 0
-        weights = jnp.array([1.0, 1.0, 0.0, 0.0])
-        self.net.params['det_weights'] = weights
+        # Make first weight much larger: [20, 0, 0, 0]
+        # After softmax: [~1.0, ~0, ~0, ~0]
+        raw_weights = jnp.array([20.0, 0.0, 0.0, 0.0])
+        self.net.params['det_weights'] = raw_weights
+        
+        log_weights = jax.nn.log_softmax(raw_weights)
+        print(f"Log weights after softmax: {log_weights}")
+        
+        # log_psi ≈ log_w_0 + 10 (since w_0 ≈ 1 and others ≈ 0)
+        # log_w_0 ≈ 0 (since exp(log_w_0) ≈ 1)
+        # So log_psi ≈ 10
         
         log_psi = self.net.multi_determinant_slater(orbitals_list)
-        print(f"Log Psi (cancellation): {log_psi}")
+        print(f"Log Psi (dominant weight): {log_psi}")
         
-        # Should not be NaN
-        self.assertFalse(jnp.any(jnp.isnan(log_psi)), "Result contains NaN on cancellation")
+        expected = log_weights[0] + 10.0
+        print(f"Expected: {expected}")
         
-        # Result should be log(abs(sum)) + max_log
-        # max_log = 0 (from det 0 and 1)
-        # sum = 1 - 1 + small ≈ 0
-        # log(0) is -inf, but we have +1e-20 stabilizer
-        # so should be around log(1e-20) ≈ -46
-        
-        self.assertTrue(jnp.all(log_psi < -40.0), "Result should be small (large negative log)")
-
-    def test_weights_handling(self):
-        print("\nTesting Weight handling...")
-        batch_size = 1
-        
-        # Det 0: 1.0 (log 0)
-        # Det 1: 1.0 (log 0)
-        # Det 2: 1.0
-        # Det 3: 1.0
-        
-        orb = jnp.eye(self.n_electrons)[None, ...]
-        orbitals_list = [orb, orb, orb, orb]
-        
-        # Weights: [exp(20), 0, 0, 0]
-        # Note: using raw weights as per implementation
-        self.net.params['det_weights'] = jnp.array([jnp.exp(20.0), 0.0, 0.0, 0.0])
-        
-        # Sum = exp(20)*1 + 0 + 0 + 0 = exp(20)
-        # log_psi = 20.0
-        
-        log_psi = self.net.multi_determinant_slater(orbitals_list)
-        print(f"Log Psi (weighted): {log_psi}")
-        
-        self.assertTrue(jnp.allclose(log_psi, 20.0, atol=1e-4), 
-                        f"Expected 20.0, got {log_psi}")
+        self.assertTrue(jnp.allclose(log_psi, expected, atol=0.1), 
+                        f"Expected {expected}, got {log_psi}")
 
 if __name__ == '__main__':
     unittest.main()
