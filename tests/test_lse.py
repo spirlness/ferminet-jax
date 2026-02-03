@@ -78,7 +78,7 @@ class TestLogSumExp(unittest.TestCase):
         expected = jnp.log(0.25) + 80.0
         print(f"Expected approx: {expected}")
         
-        self.assertTrue(jnp.allclose(log_psi, expected, atol=0.5), 
+        self.assertTrue(jnp.allclose(log_psi, expected, atol=1e-3), 
                         f"Expected {expected}, got {log_psi}")
 
     def test_softmax_normalization(self):

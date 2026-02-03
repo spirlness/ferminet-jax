@@ -115,7 +115,8 @@ class ExtendedFermiNet(SimpleFermiNet):
 
         # Add log weights to log determinants
         # log(weighted_det_i) = log_w_i + log|det_i|
-        log_weighted_dets = log_abs_det_stack + log_weights[None, :]  # [batch, n_determinants]
+        # Broadcasting: [batch, n_determinants] + [n_determinants] -> [batch, n_determinants]
+        log_weighted_dets = log_abs_det_stack + log_weights  # [batch, n_determinants]
 
         # Log-sum-exp for stable combination
         # log(sum_i exp(log_weighted_dets_i))
