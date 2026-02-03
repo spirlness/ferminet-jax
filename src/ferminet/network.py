@@ -85,14 +85,16 @@ class ExtendedFermiNet(SimpleFermiNet):
         log_abs_dets = []
 
         for det_idx, orbitals in enumerate(orbitals_list):
-            # Extract spin-up block: [batch, n_up, n_up]
+            # Extract spin-up block (both electrons and orbitals): [batch, n_up, n_up]
+            # This creates a square matrix for spin-up electrons occupying spin-up orbitals
             if self.orbitals.n_up > 0:
                 spin_up_orbitals = orbitals[:, :self.orbitals.n_up, :self.orbitals.n_up]
                 _, log_det_up = jax.vmap(jnp.linalg.slogdet)(spin_up_orbitals)
             else:
                 log_det_up = jnp.zeros(orbitals.shape[0])
             
-            # Extract spin-down block: [batch, n_down, n_down]
+            # Extract spin-down block (both electrons and orbitals): [batch, n_down, n_down]
+            # This creates a square matrix for spin-down electrons occupying spin-down orbitals
             if self.orbitals.n_down > 0:
                 spin_down_orbitals = orbitals[:, self.orbitals.n_up:, self.orbitals.n_up:]
                 _, log_det_down = jax.vmap(jnp.linalg.slogdet)(spin_down_orbitals)
