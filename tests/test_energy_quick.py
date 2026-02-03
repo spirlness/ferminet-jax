@@ -5,8 +5,8 @@ Quick test to verify energy calculation works with ExtendedFermiNet
 import jax
 import jax.numpy as jnp
 import jax.random as random
-from network import ExtendedFermiNet
-from physics import local_energy
+from ferminet.network import ExtendedFermiNet
+from ferminet.physics import local_energy
 from configs.h2_stage2_config import get_stage2_config
 
 print("=" * 70)
@@ -23,7 +23,6 @@ nuclei_config = config['nuclei']
 
 print("\nCreating network...")
 network = ExtendedFermiNet(n_electrons, n_up, nuclei_config, config['network'])
-print(f"Network created: {network.get_network_info()['total_parameters']} parameters")
 
 # Initialize electron positions
 key = random.PRNGKey(42)
@@ -36,6 +35,9 @@ key, subkey = random.split(key)
 offsets = random.normal(subkey, (n_samples, n_electrons, 3)) * 0.1
 r_elec = nuclei_pos[nucleus_indices] + offsets
 
+# Use params from network
+params = network.params
+
 print(f"\nTesting energy calculation for {n_samples} samples...")
 
 # Test energy calculation for each sample
@@ -45,7 +47,7 @@ for i in range(n_samples):
 
     def log_psi_single(r):
         r_batch = r[None, :, :]
-        return network(r_batch)[0]
+        return network.apply(params, r_batch)[0]
 
     energy = local_energy(log_psi_single, r_single, nuclei_config['positions'], nuclei_config['charges'])
 

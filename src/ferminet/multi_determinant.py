@@ -104,13 +104,20 @@ class MultiDeterminantOrbitals:
             params[det_key]['b_interaction_h'] = jnp.zeros(self.single_layer_width)
             params[det_key]['b_interaction_g'] = jnp.zeros(self.pair_layer_width)
 
-            # Orbital output weights: [total_width, n_electrons]
+            # Orbital output weights
+            # Each determinant needs n_up orbitals for up electrons and n_down orbitals for down electrons
             key, subkey = jax.random.split(key)
             total_width = self.single_layer_width + self.pair_layer_width
-            params[det_key]['w_orbital'] = jax.random.normal(
-                subkey, (total_width, self.n_electrons)
+            params[det_key]['w_orbital_up'] = jax.random.normal(
+                subkey, (total_width, self.n_up)
             )
-            params[det_key]['b_orbital'] = jnp.zeros(self.n_electrons)
+            params[det_key]['b_orbital_up'] = jnp.zeros(self.n_up)
+
+            key, subkey = jax.random.split(key)
+            params[det_key]['w_orbital_down'] = jax.random.normal(
+                subkey, (total_width, self.n_down)
+            )
+            params[det_key]['b_orbital_down'] = jnp.zeros(self.n_down)
 
         # === Determinant combination weights (learnable) ===
         # Raw weights that will be softmax-normalized
@@ -197,7 +204,7 @@ class MultiDeterminantOrbitals:
         r_elec: jnp.ndarray,
         nuclei_pos: jnp.ndarray,
         det_params: Dict
-    ) -> jnp.ndarray:
+    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """
         Compute orbital values for a single determinant.
 
@@ -207,7 +214,8 @@ class MultiDeterminantOrbitals:
             det_params: Parameters for this determinant
 
         Returns:
-            Orbital values [batch, n_elec, n_elec]
+            orbitals_up: [batch, n_up, n_up]
+            orbitals_down: [batch, n_down, n_down]
         """
         # Step 1: One-body features
         one_body = self.one_body_features(r_elec, nuclei_pos)
@@ -233,45 +241,14 @@ class MultiDeterminantOrbitals:
         g_sum = jnp.sum(g, axis=2)  # [batch, n_elec, pair_layer_width]
         combined = jnp.concatenate([h, g_sum], axis=-1)  # [batch, n_elec, total_width]
 
-        orbitals = jnp.dot(combined, det_params['w_orbital']) + det_params['b_orbital']
-        orbitals = jnp.tanh(orbitals)  # [batch, n_elec, n_elec]
+        # Split combined features for up and down electrons
+        combined_up = combined[:, :self.n_up, :]
+        combined_down = combined[:, self.n_up:, :]
 
-        return orbitals
+        orbitals_up = jnp.dot(combined_up, det_params['w_orbital_up']) + det_params['b_orbital_up']
+        orbitals_down = jnp.dot(combined_down, det_params['w_orbital_down']) + det_params['b_orbital_down']
 
-    def compute_slater_determinant(
-        self,
-        orbitals: jnp.ndarray,
-        spin_group: str
-    ) -> jnp.ndarray:
-        """
-        Compute Slater determinant for a spin group.
-
-        Args:
-            orbitals: Orbital values [batch, n_elec, n_elec]
-            spin_group: 'up' or 'down'
-
-        Returns:
-            log|determinant| [batch]
-        """
-        if spin_group == 'up':
-            # First n_up rows (spin-up electrons)
-            n_spin = self.n_up
-            start_idx = 0
-        else:
-            # Last n_down rows (spin-down electrons)
-            n_spin = self.n_down
-            start_idx = self.n_up
-
-        # Extract spin block
-        if n_spin > 0:
-            spin_orbitals = orbitals[:, start_idx:start_idx + n_spin, :]
-            # Use slogdet for numerical stability
-            # returns (sign, logabsdet)
-            _, log_det = jax.vmap(jnp.linalg.slogdet)(spin_orbitals)
-        else:
-            log_det = jnp.zeros(orbitals.shape[0])
-
-        return log_det
+        return orbitals_up, orbitals_down
 
     def compute_single_determinant(
         self,
@@ -291,11 +268,18 @@ class MultiDeterminantOrbitals:
             Combined log|determinant| [batch]
         """
         # Compute orbitals
-        orbitals = self.compute_orbitals_single_det(r_elec, nuclei_pos, det_params)
+        orbitals_up, orbitals_down = self.compute_orbitals_single_det(r_elec, nuclei_pos, det_params)
 
         # Compute up and down spin determinants
-        log_det_up = self.compute_slater_determinant(orbitals, 'up')
-        log_det_down = self.compute_slater_determinant(orbitals, 'down')
+        if self.n_up > 0:
+            _, log_det_up = jax.vmap(jnp.linalg.slogdet)(orbitals_up)
+        else:
+            log_det_up = jnp.zeros(r_elec.shape[0])
+
+        if self.n_down > 0:
+            _, log_det_down = jax.vmap(jnp.linalg.slogdet)(orbitals_down)
+        else:
+            log_det_down = jnp.zeros(r_elec.shape[0])
 
         # Combine: log|psi| = log|det_up| + log|det_down|
         log_det = log_det_up + log_det_down

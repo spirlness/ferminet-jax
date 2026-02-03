@@ -66,8 +66,9 @@ class ExtendedFermiNet(SimpleFermiNet):
         Calculate multi-determinant Slater combination using Log-Sum-Exp trick.
 
         Args:
-            orbitals_list: List of orbital matrices for each determinant
-                           Each has shape [batch, n_elec, n_elec]
+            orbitals_list: List of (orbitals_up, orbitals_down) for each determinant.
+                           orbitals_up has shape [batch, n_up, n_up]
+                           orbitals_down has shape [batch, n_down, n_down]
 
         Returns:
             Combined log|determinant| [batch]
@@ -76,10 +77,22 @@ class ExtendedFermiNet(SimpleFermiNet):
         log_abs_dets = []
         signs = []
 
-        for det_idx, orbitals in enumerate(orbitals_list):
-            sign, log_abs_det = jax.vmap(jnp.linalg.slogdet)(orbitals)
-            log_abs_dets.append(log_abs_det)
-            signs.append(sign)
+        for det_idx, (orb_up, orb_down) in enumerate(orbitals_list):
+            # Compute log|det| for up and down spins
+            if self.n_up > 0:
+                sign_up, log_abs_det_up = jax.vmap(jnp.linalg.slogdet)(orb_up)
+            else:
+                sign_up, log_abs_det_up = jnp.ones(orb_up.shape[0]), jnp.zeros(orb_up.shape[0])
+
+            if self.n_electrons - self.n_up > 0:
+                sign_down, log_abs_det_down = jax.vmap(jnp.linalg.slogdet)(orb_down)
+            else:
+                sign_down, log_abs_det_down = jnp.ones(orb_up.shape[0]), jnp.zeros(orb_up.shape[0])
+
+            # Total logabsdet = log|det_up| + log|det_down|
+            # Total sign = sign_up * sign_down
+            log_abs_dets.append(log_abs_det_up + log_abs_det_down)
+            signs.append(sign_up * sign_down)
 
         # Stack arrays: [n_determinants, batch]
         log_abs_det_stack = jnp.stack(log_abs_dets, axis=0)
@@ -92,32 +105,16 @@ class ExtendedFermiNet(SimpleFermiNet):
         batch_size = log_abs_det_stack.shape[1]
         det_weights_expanded = jnp.tile(det_weights[:, None], (1, batch_size))
 
-        # We want to compute log|sum(w_i * det_i)|
-        # = log|sum(w_i * s_i * exp(log_abs_det_i))|
-
-        # Combine weights and signs
-        # effective_sign_i = sign(w_i) * s_i
-        # log_abs_w_i = log|w_i|
-
-        # For numerical stability with small weights, handle sign(w_i) carefully
-        # But usually w_i are initialized positive and might become negative
+        # Combined weight sign and magnitude
         weight_signs = jnp.sign(det_weights_expanded)
         log_abs_weights = jnp.log(jnp.abs(det_weights_expanded) + 1e-20)
 
         total_log_terms = log_abs_weights + log_abs_det_stack
         total_signs = weight_signs * sign_stack
 
-        # Use Log-Sum-Exp trick
-        # max_log = max(total_log_terms)
-        # sum = sum(total_signs * exp(total_log_terms - max_log))
-        # result = max_log + log|sum|
-
+        # Log-Sum-Exp trick for stability
         max_log = jnp.max(total_log_terms, axis=0)  # [batch]
-
-        # Subtract max for stability
-        # [n_det, batch] - [batch] (broadcast)
         exp_terms = jnp.exp(total_log_terms - max_log[None, :])
-
         weighted_sum = jnp.sum(total_signs * exp_terms, axis=0)  # [batch]
 
         log_psi = max_log + jnp.log(jnp.abs(weighted_sum) + 1e-20)
@@ -172,10 +169,11 @@ class ExtendedFermiNet(SimpleFermiNet):
             if det_key not in params:
                 raise KeyError(f"Missing parameters for determinant {i}")
             det_params = params[det_key]
-            orb = self.orbitals.compute_orbitals_single_det(
+            # Returns Tuple[orbitals_up, orbitals_down]
+            orb_tuple = self.orbitals.compute_orbitals_single_det(
                 r_elec, self.nuclei_config["positions"], det_params
             )
-            orbitals_list.append(orb)
+            orbitals_list.append(orb_tuple)
 
         log_psi = self.multi_determinant_slater(
             orbitals_list, det_weights=params["det_weights"]
@@ -204,10 +202,11 @@ class ExtendedFermiNet(SimpleFermiNet):
             if det_key in self.params:
                 det_params = self.params[det_key]
                 # Compute orbital matrices using MultiDeterminantOrbitals helper
-                orb = self.orbitals.compute_orbitals_single_det(
+                # Returns Tuple[orbitals_up, orbitals_down]
+                orb_tuple = self.orbitals.compute_orbitals_single_det(
                     r_elec, self.nuclei_config["positions"], det_params
                 )
-                orbitals_list.append(orb)
+                orbitals_list.append(orb_tuple)
             else:
                 raise KeyError(f"Missing parameters for determinant {i}")
 

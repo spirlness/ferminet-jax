@@ -16,7 +16,22 @@
       "mcp__huggingface__*",
       "mcp__github__*",
       "Bash(grep:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(read_file:*)",
+      "Bash(export:*)",
+      "Bash(set:*)",
+      "Bash($env:PYTHONPATH = \"G:\\\\FermiNet\\\\src\\\\ferminet;G:\\\\FermiNet\")",
+      "Bash(PYTHONPATH=\"G:\\\\FermiNet\\\\src;G:\\\\FermiNet\\\\src\\\\ferminet;G:\\\\FermiNet\" python:*)",
+      "Bash(PYTHONPATH=\"G:\\\\FermiNet\\\\src;G:\\\\FermiNet\" python:*)",
+      "Bash(__NEW_LINE_721b518ac9fe5807__ cat <<'EOF'\n\"\"\"\nSimple test script to verify numerical stability of ExtendedFermiNet\n\"\"\"\n\nimport jax\nimport jax.numpy as jnp\nimport jax.random as random\nimport numpy as np\nimport warnings\nimport sys\nimport os\n\n# Import local modules\nfrom ferminet.network import ExtendedFermiNet\nfrom ferminet.physics import local_energy\nfrom configs.h2_stage2_config import get_stage2_config\n\ndef test_extended_network_stability\\(\\):\n    print\\(\"=\" * 70\\)\n    print\\(\"ExtendedFermiNet Stability Test\"\\)\n    print\\(\"=\" * 70\\)\n\n    config = get_stage2_config\\('default'\\)\n    network = ExtendedFermiNet\\(\n        n_electrons=config['n_electrons'],\n        n_up=config['n_up'],\n        nuclei_config=config['nuclei'],\n        network_config=config['network']\n    \\)\n    \n    key = random.PRNGKey\\(42\\)\n    params = network.params\n    \n    # 1. Test normal input\n    print\\(\"\\\\n1. Testing normal input...\"\\)\n    x_normal = random.normal\\(key, \\(4, config['n_electrons'], 3\\)\\)\n    log_psi_normal = network.apply\\(params, x_normal\\)\n    print\\(f\"   log_psi finite: {jnp.all\\(jnp.isfinite\\(log_psi_normal\\)\\)}\"\\)\n    print\\(f\"   log_psi mean: {jnp.mean\\(log_psi_normal\\):.6f}\"\\)\n\n    # 2. Test large input \\(potential overflow\\)\n    print\\(\"\\\\n2. Testing large input...\"\\)\n    x_large = x_normal * 100.0\n    log_psi_large = network.apply\\(params, x_large\\)\n    print\\(f\"   log_psi finite: {jnp.all\\(jnp.isfinite\\(log_psi_large\\)\\)}\"\\)\n    \n    # 3. Test electron collision \\(potential singularity\\)\n    print\\(\"\\\\n3. Testing electron collision...\"\\)\n    x_collision = jnp.zeros\\(\\(4, config['n_electrons'], 3\\)\\)\n    log_psi_collision = network.apply\\(params, x_collision\\)\n    print\\(f\"   log_psi finite: {jnp.all\\(jnp.isfinite\\(log_psi_collision\\)\\)}\"\\)\n\n    print\\(\"\\\\nStability tests completed!\"\\)\n\nif __name__ == \"__main__\":\n    test_extended_network_stability\\(\\)\nEOF)",
+      "Bash(G:FermiNetsrc)",
+      "Bash(PYTHONPATH=src:configs python:*)",
+      "Bash(PYTHONPATH=./src python:*)",
+      "Bash(PYTHONPATH=./src:. python:*)",
+      "Bash(PYTHONPATH=./src:. pytest:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor: stabilize Stage 2 architecture and cleanup codebase\n\n- Removed redundant and incorrect PyTorch-based artifacts.\n- Fixed critical square matrix bug in MultiDeterminantOrbitals for spin groups.\n- Refactored ExtendedFermiNet to handle split determinants correctly.\n- Added comprehensive unit tests and collision stability checks.\n- Cleaned up obsolete documentation and benchmarking scripts.\n- Added CLAUDE.md for project guidance.\nEOF\n\\)\")",
+      "Bash(git push:*)"
     ]
   },
   "mcpServers": {
