@@ -31,7 +31,9 @@
       "Bash(PYTHONPATH=./src:. pytest:*)",
       "Bash(git add:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nrefactor: stabilize Stage 2 architecture and cleanup codebase\n\n- Removed redundant and incorrect PyTorch-based artifacts.\n- Fixed critical square matrix bug in MultiDeterminantOrbitals for spin groups.\n- Refactored ExtendedFermiNet to handle split determinants correctly.\n- Added comprehensive unit tests and collision stability checks.\n- Cleaned up obsolete documentation and benchmarking scripts.\n- Added CLAUDE.md for project guidance.\nEOF\n\\)\")",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git commit:*)"
     ]
   },
   "mcpServers": {
