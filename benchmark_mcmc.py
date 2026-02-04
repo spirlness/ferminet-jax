@@ -63,14 +63,12 @@ def benchmark():
         # as long as we create a new closure and pass it.
         # But let's create a new closure each time as VMCTrainer does.
 
-        current_params = params
-
         def log_psi_fn(x):
-            return network_apply(current_params, x)
+            return network_apply(params, x)
 
-        # Create grad_log_psi_fn bound to current_params
+        # Create grad_log_psi_fn bound to params
         # This is cheap (python lambda) and uses the pre-transformed JAX function
-        grad_log_psi_fn = lambda x: grad_batch(current_params, x)
+        grad_log_psi_fn = lambda x: grad_batch(params, x)
 
         key, subkey = random.split(key)
         r, _ = mcmc.sample(log_psi_fn, r, subkey, grad_log_psi_fn=grad_log_psi_fn)
