@@ -75,6 +75,9 @@ class ExtendedFermiNet(SimpleFermiNet):
         """
         Calculate multi-determinant Slater combination using Log-Sum-Exp trick.
 
+        This uses softmax-normalized weights to match the MultiDeterminantOrbitals
+        combination logic, ensuring consistent log|psi| evaluation across modules.
+
         Args:
             orbitals_list: List of (orbitals_up, orbitals_down) for each determinant.
                            orbitals_up has shape [batch, n_up, n_up]
@@ -83,11 +86,10 @@ class ExtendedFermiNet(SimpleFermiNet):
         Returns:
             Combined log|determinant| [batch]
         """
-        # Compute log-determinant and sign for each determinant
+        # Compute log|det| for each determinant
         log_abs_dets = []
-        signs = []
 
-        for det_idx, (orb_up, orb_down) in enumerate(orbitals_list):
+        for orb_up, orb_down in orbitals_list:
             # Compute log|det| for up and down spins
             if self.n_up > 0:
                 sign_up, log_abs_det_up = jax.vmap(jnp.linalg.slogdet)(orb_up)
@@ -100,34 +102,23 @@ class ExtendedFermiNet(SimpleFermiNet):
                 sign_down, log_abs_det_down = jnp.ones(orb_up.shape[0]), jnp.zeros(orb_up.shape[0])
 
             # Total logabsdet = log|det_up| + log|det_down|
-            # Total sign = sign_up * sign_down
             log_abs_dets.append(log_abs_det_up + log_abs_det_down)
-            signs.append(sign_up * sign_down)
 
         # Stack arrays: [n_determinants, batch]
         log_abs_det_stack = jnp.stack(log_abs_dets, axis=0)
-        sign_stack = jnp.stack(signs, axis=0)
 
         # Get determinant weights
         if det_weights is None:
             det_weights = self.params["det_weights"]
-        # Expand det_weights to [n_determinants, batch]
-        batch_size = log_abs_det_stack.shape[1]
-        det_weights_expanded = jnp.tile(det_weights[:, None], (1, batch_size))
-
-        # Combined weight sign and magnitude
-        weight_signs = jnp.sign(det_weights_expanded)
-        log_abs_weights = jnp.log(jnp.abs(det_weights_expanded) + 1e-20)
-
-        total_log_terms = log_abs_weights + log_abs_det_stack
-        total_signs = weight_signs * sign_stack
+        log_weights = jax.nn.log_softmax(det_weights)
+        total_log_terms = log_abs_det_stack + log_weights[:, None]
 
         # Log-Sum-Exp trick for stability
         max_log = jnp.max(total_log_terms, axis=0)  # [batch]
         exp_terms = jnp.exp(total_log_terms - max_log[None, :])
-        weighted_sum = jnp.sum(total_signs * exp_terms, axis=0)  # [batch]
+        weighted_sum = jnp.sum(exp_terms, axis=0)  # [batch]
 
-        log_psi = max_log + jnp.log(jnp.abs(weighted_sum) + 1e-20)
+        log_psi = max_log + jnp.log(weighted_sum + 1e-20)
 
         return log_psi
 
