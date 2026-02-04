@@ -263,6 +263,9 @@ class MultiDeterminantOrbitals:
             start_idx = self.n_up
 
         # Extract spin block (both rows and columns)
+        # NOTE: This fix changes the behavior from previous versions where only
+        # rows were extracted. Models trained with the old behavior will produce
+        # different results when loaded. See PR #5 for migration details.
         if n_spin > 0:
             spin_orbitals = orbitals[:, start_idx:start_idx + n_spin, start_idx:start_idx + n_spin]
             # Use slogdet for numerical stability
@@ -393,6 +396,19 @@ class MultiDeterminantOrbitals:
         log_psi, weights = self.combine_with_weights(log_determinants)
 
         return log_psi
+
+    def set_weights(self, weights: jnp.ndarray) -> None:
+        """
+        Set raw determinant weights (will be softmax-normalized during computation).
+
+        Args:
+            weights: Raw weight values [n_determinants]
+        """
+        if weights.shape != (self.n_determinants,):
+            raise ValueError(
+                f"Expected weights shape ({self.n_determinants},), got {weights.shape}"
+            )
+        self.params['det_weights'] = weights
 
     def get_weights(self) -> jnp.ndarray:
         """

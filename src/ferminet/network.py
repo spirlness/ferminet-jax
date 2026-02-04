@@ -73,6 +73,13 @@ class ExtendedFermiNet(SimpleFermiNet):
         Each determinant is computed as the product of spin-up and spin-down determinants:
         - log|det_i| = log|det_up_i| + log|det_down_i|
 
+        NOTE: This implementation uses softmax normalization, which ensures all weights
+        are positive and sum to 1. This eliminates the ability to represent destructive
+        interference between determinants (negative weights). While this improves
+        numerical stability, it may reduce model expressiveness for systems where
+        destructive interference is physically important. If your application requires
+        signed weights, consider implementing a separate signed-weight variant.
+
         Args:
             orbitals_list: List of orbital matrices for each determinant
                            Each has shape [batch, n_elec, n_elec]
@@ -85,13 +92,15 @@ class ExtendedFermiNet(SimpleFermiNet):
         log_abs_dets = []
 
         for det_idx, orbitals in enumerate(orbitals_list):
+            batch_size = orbitals.shape[0]
+            
             # Extract spin-up block (both electrons and orbitals): [batch, n_up, n_up]
             # This creates a square matrix for spin-up electrons occupying spin-up orbitals
             if self.orbitals.n_up > 0:
                 spin_up_orbitals = orbitals[:, :self.orbitals.n_up, :self.orbitals.n_up]
                 _, log_det_up = jax.vmap(jnp.linalg.slogdet)(spin_up_orbitals)
             else:
-                log_det_up = jnp.zeros(orbitals.shape[0])
+                log_det_up = jnp.zeros(batch_size)
             
             # Extract spin-down block (both electrons and orbitals): [batch, n_down, n_down]
             # This creates a square matrix for spin-down electrons occupying spin-down orbitals
@@ -99,7 +108,7 @@ class ExtendedFermiNet(SimpleFermiNet):
                 spin_down_orbitals = orbitals[:, self.orbitals.n_up:, self.orbitals.n_up:]
                 _, log_det_down = jax.vmap(jnp.linalg.slogdet)(spin_down_orbitals)
             else:
-                log_det_down = jnp.zeros(orbitals.shape[0])
+                log_det_down = jnp.zeros(batch_size)
             
             # Combined log determinant: log|det| = log|det_up| + log|det_down|
             log_abs_det = log_det_up + log_det_down
@@ -120,12 +129,8 @@ class ExtendedFermiNet(SimpleFermiNet):
         # Broadcasting: [batch, n_determinants] + [1, n_determinants] -> [batch, n_determinants]
         log_weighted_dets = log_abs_det_stack + log_weights[None, :]  # [batch, n_determinants]
 
-        # Log-sum-exp for stable combination
-        # log(sum_i exp(log_weighted_dets_i))
-        max_log = jnp.max(log_weighted_dets, axis=-1, keepdims=True)
-        log_sum = max_log + jnp.log(
-            jnp.sum(jnp.exp(log_weighted_dets - max_log), axis=-1, keepdims=True)
-        )  # [batch, 1]
+        # Log-sum-exp for stable combination using JAX's built-in function
+        log_sum = jax.scipy.special.logsumexp(log_weighted_dets, axis=-1, keepdims=True)
 
         return log_sum.squeeze(axis=-1)
 

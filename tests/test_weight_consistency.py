@@ -5,7 +5,6 @@ for determinant weight combination.
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -57,26 +56,24 @@ def test_weight_combination_consistency():
         n_electrons, n_up, nuclei_config, network_config
     )
     
-    # Set the same det_weights for both
+    # Set the same det_weights for both using the new set_weights() method
     test_weights = jnp.array([1.0, 2.0, 0.5, 3.0])
-
+    multi_det.set_weights(test_weights)
+    
     # Work on local copies of the params dictionaries to avoid direct
     # in-place mutation of internal params mappings.
-    multi_det_params = dict(multi_det.params)
     extended_net_params = dict(extended_net.params)
     extended_orbitals_params = dict(extended_net.orbitals.params)
 
-    multi_det_params['det_weights'] = test_weights
     extended_net_params['det_weights'] = test_weights
 
     # Copy determinant parameters from multi_det to extended_net
     for i in range(n_determinants):
         det_key = f'det_{i}'
-        extended_net_params[det_key] = multi_det_params[det_key]
-        extended_orbitals_params[det_key] = multi_det_params[det_key]
+        extended_net_params[det_key] = multi_det.params[det_key]
+        extended_orbitals_params[det_key] = multi_det.params[det_key]
 
     # Reassign the updated params back to the objects
-    multi_det.params = multi_det_params
     extended_net.params = extended_net_params
     extended_net.orbitals.params = extended_orbitals_params
     
@@ -116,7 +113,7 @@ def test_weight_combination_consistency():
     # (which will still be softmax-normalized)
     print("\n7. Testing with mixed positive/negative raw weights...")
     test_weights_2 = jnp.array([2.0, -1.0, 0.0, 1.5])
-    multi_det.params['det_weights'] = test_weights_2
+    multi_det.set_weights(test_weights_2)
     extended_net.params['det_weights'] = test_weights_2
     
     print(f"   Raw weights: {test_weights_2}")
