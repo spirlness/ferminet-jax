@@ -26,11 +26,9 @@ def benchmark():
     }
 
     def network_apply(p, x):
-        # Flatten input [batch, n_elec, dim] -> [batch, input_dim]
-        # But we need batch dimension handling
-        # If x is [batch, ...], we flatten
-        # If x is [n_elec, ...], we flatten differently?
-        # FixedStepMCMC calls log_psi_fn with batch dimension
+        # x is expected to have a leading batch dimension: [batch, n_elec, dim]
+        # Flatten to [batch, input_dim] where input_dim = n_elec * dim
+        # FixedStepMCMC and grad_batch always call this with batched inputs.
 
         flat_x = x.reshape(x.shape[0], -1)
 
