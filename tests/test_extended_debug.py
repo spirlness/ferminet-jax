@@ -46,7 +46,8 @@ except Exception as e:
 print("\n3. Checking network parameters for NaN...")
 all_finite = True
 nan_params = []
-for name, param in network.params.items():
+for path, param in jax.tree_util.tree_flatten_with_path(network.params)[0]:
+    name = "/".join(str(p) for p in path)
     has_nan = jnp.any(jnp.isnan(param))
     has_inf = jnp.any(jnp.isinf(param))
     if has_nan or has_inf:
@@ -123,17 +124,15 @@ try:
     grads = grad_fn(network.params, r_elec)
 
     print("   Gradient shapes:")
-    for name, grad in grads.items():
+    all_grads_finite = True
+    for path, grad in jax.tree_util.tree_flatten_with_path(grads)[0]:
+        name = "/".join(str(p) for p in path)
         has_nan = jnp.any(jnp.isnan(grad))
         has_inf = jnp.any(jnp.isinf(grad))
         grad_norm = float(jnp.linalg.norm(jnp.ravel(grad)))
         status = "[FAIL]" if (has_nan or has_inf) else "[OK]"
         print(f"   {status} {name}: shape={grad.shape}, norm={grad_norm:.6f}")
-
-    # Check all gradients
-    all_grads_finite = True
-    for name, grad in grads.items():
-        if jnp.any(jnp.isnan(grad)) or jnp.any(jnp.isinf(grad)):
+        if has_nan or has_inf:
             all_grads_finite = False
             print(f"   [WARNING] Gradient for {name} contains NaN/Inf")
 
