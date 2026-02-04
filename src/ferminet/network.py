@@ -66,32 +66,11 @@ class ExtendedFermiNet(SimpleFermiNet):
         Returns information about the network.
         """
         total_parameters = sum(x.size for x in jax.tree_util.tree_leaves(self.params))
-        # Base information always available.
-        network_info = {
+        return {
             'type': 'ExtendedFermiNet',
-            'total_parameters': total_parameters,
+            'total_parameters': total_parameters
         }
 
-        # Additional metadata expected by extended debug tooling/tests.
-        # Be defensive about attribute names to avoid AttributeError if the
-        # underlying MultiDeterminantOrbitals implementation changes.
-        determinant_count = getattr(
-            self.orbitals,
-            'n_determinants',
-            getattr(self.orbitals, 'determinant_count', None),
-        )
-        network_info['determinant_count'] = determinant_count
-        network_info['single_layer_width'] = getattr(
-            self.orbitals, 'single_layer_width', None
-        )
-        network_info['pair_layer_width'] = getattr(
-            self.orbitals, 'pair_layer_width', None
-        )
-        network_info['num_interaction_layers'] = getattr(
-            self.orbitals, 'num_interaction_layers', None
-        )
-
-        return network_info
     def multi_determinant_slater(self, orbitals_list, det_weights=None):
         """
         Calculate multi-determinant Slater combination using Log-Sum-Exp trick.
