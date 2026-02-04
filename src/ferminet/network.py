@@ -86,8 +86,9 @@ class ExtendedFermiNet(SimpleFermiNet):
         Returns:
             Combined log|determinant| [batch]
         """
-        # Compute log|det| for each determinant
+        # Compute log|det| and sign for each determinant
         log_abs_dets = []
+        det_signs = []
 
         for orb_up, orb_down in orbitals_list:
             # Compute log|det| for up and down spins
@@ -103,22 +104,26 @@ class ExtendedFermiNet(SimpleFermiNet):
 
             # Total logabsdet = log|det_up| + log|det_down|
             log_abs_dets.append(log_abs_det_up + log_abs_det_down)
+            det_signs.append(sign_up * sign_down)
 
         # Stack arrays: [n_determinants, batch]
         log_abs_det_stack = jnp.stack(log_abs_dets, axis=0)
+        det_sign_stack = jnp.stack(det_signs, axis=0)
 
         # Get determinant weights
         if det_weights is None:
             det_weights = self.params["det_weights"]
-        log_weights = jax.nn.log_softmax(det_weights)
-        total_log_terms = log_abs_det_stack + log_weights[:, None]
+        weight_signs = jnp.sign(det_weights)
+        log_abs_weights = jnp.log(jnp.abs(det_weights) + 1e-12)
+        log_norm_abs_weights = jax.nn.log_softmax(log_abs_weights)
+        total_log_terms = log_abs_det_stack + log_norm_abs_weights[:, None]
 
         # Log-Sum-Exp trick for stability
         max_log = jnp.max(total_log_terms, axis=0)  # [batch]
         exp_terms = jnp.exp(total_log_terms - max_log[None, :])
-        weighted_sum = jnp.sum(exp_terms, axis=0)  # [batch]
+        signed_sum = jnp.sum(exp_terms * det_sign_stack * weight_signs[:, None], axis=0)
 
-        log_psi = max_log + jnp.log(weighted_sum + 1e-20)
+        log_psi = max_log + jnp.log(jnp.abs(signed_sum) + 1e-20)
 
         return log_psi
 
