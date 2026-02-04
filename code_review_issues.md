@@ -34,3 +34,38 @@
 
 **影响范围**
 - 波函数定义一致性与数值稳定性；可能导致训练结果不可重复或发散。
+
+---
+
+## Issue 3: Soft-Coulomb 势能实现存在倒数错误，导致势能数值反向
+
+**位置**
+- `src/ferminet/physics.py` 中 `nuclear_potential` 与 `electronic_potential` 的 soft-core 距离使用方式。
+
+**问题描述**
+- `soft_coulomb_potential_sq` 已经返回了 `1 / sqrt(r^2 + alpha^2)`，但在 `nuclear_potential` 中又使用 `nuclei_charge / soft_distances`，在 `electronic_potential` 中使用 `1.0 / soft_distances`，等价于将势能变成 `sqrt(r^2 + alpha^2)`，与物理期望的软化库仑势完全相反。
+- 结果会导致势能量纲与大小错误，破坏能量估计与训练收敛。
+
+**建议修复**
+- 直接使用 `soft_distances` 作为分母的倒数结果，即：`potential = -jnp.sum(nuclei_charge[None, :] * soft_distances)`，以及 `potential = jnp.sum(soft_distances * mask)`。
+
+**影响范围**
+- 全部能量计算与优化结果；势能符号与数值可能严重偏离正确结果。
+
+---
+
+## Issue 4: Langevin MCMC 采样未包含 MALA 接受率修正项
+
+**位置**
+- `src/ferminet/mcmc.py` 中 `_langevin_step` 与 `_metropolis_accept`。
+
+**问题描述**
+- 代码使用了带漂移项的 Langevin 提议 (`r' = r + 0.5 * ∇logψ * dt + N(0, dt)`)，但接受率仅基于 `exp(2*(logψ' - logψ))`，没有包含 MALA 的正向/反向提议密度比。
+- 这会导致采样分布偏离目标分布，尤其是步长较大或梯度变化明显时。
+
+**建议修复**
+- 使用 MALA 接受率：`accept_prob = exp(2*(logψ' - logψ) + log_q(r|r') - log_q(r'|r))`，其中 `log_q` 为高斯提议密度。
+- 或者改为纯随机游走提议以保持对称性。
+
+**影响范围**
+- 采样分布正确性与接受率；可能导致估计偏差与训练不稳定。
