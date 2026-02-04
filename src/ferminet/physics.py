@@ -112,14 +112,21 @@ def make_kinetic_energy(
         return log_psi(r_flat.reshape(n_electrons, 3))
 
     grad_log_psi_flat = jax.grad(log_psi_flat)
-    hess_log_psi_flat = jax.jacfwd(grad_log_psi_flat)
 
     def kinetic(r_elec: jnp.ndarray) -> jnp.ndarray:
         r_flat = r_elec.reshape(-1)
         grad = grad_log_psi_flat(r_flat)
         grad_squared_sum = jnp.sum(grad**2)
-        hess = hess_log_psi_flat(r_flat)
-        laplacian = jnp.trace(hess)
+
+        n = r_flat.shape[0]
+        eye = jnp.eye(n)
+
+        def body_fun(i, val):
+            e_i = eye[i]
+            _, dgrad = jax.jvp(grad_log_psi_flat, (r_flat,), (e_i,))
+            return val + dgrad[i]
+
+        laplacian = jax.lax.fori_loop(0, n, body_fun, 0.0)
         return -0.5 * (grad_squared_sum + laplacian)
 
     return kinetic
@@ -187,14 +194,23 @@ def make_batched_local_energy(log_psi: Callable, n_electrons: int) -> Callable:
         return log_psi(params, r_single[None, :, :])[0]
 
     grad_log_psi_flat = jax.grad(log_psi_flat, argnums=1)
-    hess_log_psi_flat = jax.jacfwd(grad_log_psi_flat, argnums=1)
 
     def kinetic_single(params, r_single: jnp.ndarray) -> jnp.ndarray:
         r_flat = r_single.reshape(-1)
         grad = grad_log_psi_flat(params, r_flat)
         grad_squared_sum = jnp.sum(grad**2)
-        hess = hess_log_psi_flat(params, r_flat)
-        laplacian = jnp.trace(hess)
+
+        n = r_flat.shape[0]
+        eye = jnp.eye(n)
+
+        def body_fun(i, val):
+            e_i = eye[i]
+            _, dgrad = jax.jvp(
+                lambda r: grad_log_psi_flat(params, r), (r_flat,), (e_i,)
+            )
+            return val + dgrad[i]
+
+        laplacian = jax.lax.fori_loop(0, n, body_fun, 0.0)
         return -0.5 * (grad_squared_sum + laplacian)
 
     def local_energy_single(
