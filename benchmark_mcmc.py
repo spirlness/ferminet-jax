@@ -44,9 +44,11 @@ def benchmark():
 
     # Pre-compute gradient transformation ONCE
     def single_network_apply(p, x_single):
-        # x_single: [n_elec, 3] -> need to batch it for network_apply or adjust network_apply
-        # network_apply expects batched input [batch, ...]
-        # So we create a batch of 1
+        # `jax.grad` expects a function that, given a single configuration x_single,
+        # returns a scalar. Our network_apply, however, is written to operate on
+        # batched inputs [batch, n_elec, dim] and returns a batch of outputs.
+        # Wrap x_single into a batch of size 1, call network_apply, then index [0]
+        # to remove the artificial batch dimension and obtain a scalar output.
         return network_apply(p, x_single[None, ...])[0]
 
     grad_single = jax.grad(single_network_apply, argnums=1)
