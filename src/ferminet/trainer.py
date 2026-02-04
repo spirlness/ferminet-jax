@@ -40,6 +40,15 @@ class VMCTrainer:
             network_forward, n_electrons=self.network.n_electrons
         )
 
+        # Pre-compute gradient function for MCMC
+        def single_network_forward(params, r_single):
+            # network.apply expects [batch, ...]
+            # r_single is [n_elec, 3]
+            return self.network.apply(params, r_single[None, ...])[0]
+
+        self._grad_single = jax.grad(single_network_forward, argnums=1)
+        self._batched_grad_log_psi = jax.vmap(self._grad_single, in_axes=(None, 0))
+
         # Pre-build grad transform for update step
         self._loss_and_grad = jax.value_and_grad(self.energy_loss, has_aux=True)
 
@@ -189,7 +198,12 @@ class VMCTrainer:
         def log_psi_fn(r):
             return self.network.apply(params, r)
 
-        r_elec_new, accept_rate = self.mcmc.sample(log_psi_fn, r_elec, key)
+        def grad_log_psi_fn(r):
+            return self._batched_grad_log_psi(params, r)
+
+        r_elec_new, accept_rate = self.mcmc.sample(
+            log_psi_fn, r_elec, key, grad_log_psi_fn=grad_log_psi_fn
+        )
 
         # 2. Update parameters (JITted)
         # Use current learning rate
@@ -309,7 +323,12 @@ class ExtendedTrainer(VMCTrainer):
         def log_psi_fn(r):
             return self.network.apply(params, r)
 
-        r_elec_new, accept_rate = self.mcmc.sample(log_psi_fn, r_elec, key)
+        def grad_log_psi_fn(r):
+            return self._batched_grad_log_psi(params, r)
+
+        r_elec_new, accept_rate = self.mcmc.sample(
+            log_psi_fn, r_elec, key, grad_log_psi_fn=grad_log_psi_fn
+        )
 
         # 2. Update with JIT
         current_lr = (

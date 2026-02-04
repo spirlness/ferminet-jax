@@ -24,7 +24,7 @@ class FixedStepMCMC:
         self.step_size = step_size
         self.n_steps = n_steps
 
-    def sample(self, log_psi_fn, r_elec, key):
+    def sample(self, log_psi_fn, r_elec, key, grad_log_psi_fn=None):
         """
         使用Langevin动力学进行Metropolis采样
 
@@ -32,6 +32,8 @@ class FixedStepMCMC:
             log_psi_fn: 波函数对数函数，输入位置返回log|ψ(r)|，形状为 [batch]
             r_elec: 当前电子位置，形状 [batch, n_elec, 3]
             key: JAX随机数key
+            grad_log_psi_fn: 可选的预计算梯度函数。如果提供，将使用它而不是重新计算。
+                             输入 [batch, n_elec, 3]，输出 [batch, n_elec, 3]
 
         Returns:
             r_new: 新的电子位置，形状 [batch, n_elec, 3]
@@ -40,15 +42,16 @@ class FixedStepMCMC:
         # 计算当前波函数对数值
         log_psi_current = log_psi_fn(r_elec)
 
-        # 创建单样本的梯度函数（标量输出）
-        def single_log_psi(r_single):
-            """包装器，返回标量"""
-            return log_psi_fn(r_single[jnp.newaxis, :, :])[0]
+        if grad_log_psi_fn is None:
+            # 创建单样本的梯度函数（标量输出）
+            def single_log_psi(r_single):
+                """包装器，返回标量"""
+                return log_psi_fn(r_single[jnp.newaxis, :, :])[0]
 
-        grad_log_psi_single = jax.grad(single_log_psi)
+            grad_log_psi_single = jax.grad(single_log_psi)
 
-        # 向量化梯度函数
-        grad_log_psi_fn = jax.vmap(grad_log_psi_single)
+            # 向量化梯度函数
+            grad_log_psi_fn = jax.vmap(grad_log_psi_single)
 
         # 执行多步Langevin更新
         def step_fn(carry, _):
