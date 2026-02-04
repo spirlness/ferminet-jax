@@ -68,7 +68,11 @@ class ExtendedFermiNet(SimpleFermiNet):
         total_parameters = sum(x.size for x in jax.tree_util.tree_leaves(self.params))
         return {
             'type': 'ExtendedFermiNet',
-            'total_parameters': total_parameters
+            'total_parameters': total_parameters,
+            'determinant_count': self.config.get("determinant_count", 1),
+            'single_layer_width': self.config.get("single_layer_width", 0),
+            'pair_layer_width': self.config.get("pair_layer_width", 0),
+            'num_interaction_layers': self.config.get("num_interaction_layers", 0),
         }
 
     def multi_determinant_slater(self, orbitals_list, det_weights=None):
