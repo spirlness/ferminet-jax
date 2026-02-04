@@ -10,13 +10,23 @@ from typing import Callable
 
 
 @jax.jit
+def soft_coulomb_potential_sq(r2: jnp.ndarray, alpha: float = 0.1) -> jnp.ndarray:
+    """
+    Soft-core Coulomb potential using squared distance.
+
+    Formula: V = 1 / sqrt(r^2 + alpha^2)
+    """
+    return 1.0 / jnp.sqrt(r2 + alpha**2)
+
+
+@jax.jit
 def soft_coulomb_potential(r: jnp.ndarray, alpha: float = 0.1) -> jnp.ndarray:
     """
     Soft-core Coulomb potential to avoid singularity at r=0
 
     Formula: V = 1 / sqrt(r^2 + alpha^2)
     """
-    return 1.0 / jnp.sqrt(r**2 + alpha**2)
+    return soft_coulomb_potential_sq(r**2, alpha)
 
 
 @jax.jit
@@ -33,10 +43,10 @@ def nuclear_potential(
     # Calculate distances from all electrons to all nuclei
     # Broadcasting: (n_elec, 1, 3) - (1, n_nuclei, 3) -> (n_elec, n_nuclei, 3)
     diff = r_elec[:, None, :] - nuclei_pos[None, :, :]
-    distances = jnp.linalg.norm(diff, axis=-1)  # (n_elec, n_nuclei)
+    distances_sq = jnp.sum(diff**2, axis=-1)  # (n_elec, n_nuclei)
 
     # Soften to avoid singularity
-    soft_distances = soft_coulomb_potential(distances, alpha=0.1)
+    soft_distances = soft_coulomb_potential_sq(distances_sq, alpha=0.1)
 
     # Calculate potential: -sum(Z_j / r_ij)
     # Sum over nuclei charges for each electron, then sum over electrons
@@ -56,14 +66,14 @@ def electronic_potential(r_elec: jnp.ndarray) -> jnp.ndarray:
     # Calculate distances between all electron pairs
     # (n_elec, 1, 3) - (1, n_elec, 3) -> (n_elec, n_elec, 3)
     diff = r_elec[:, None, :] - r_elec[None, :, :]
-    distances = jnp.linalg.norm(diff, axis=-1)  # (n_elec, n_elec)
+    distances_sq = jnp.sum(diff**2, axis=-1)  # (n_elec, n_elec)
 
     # Create upper triangular mask (exclude diagonal and lower triangle)
     mask = jnp.triu(jnp.ones((n_elec, n_elec)), k=1)
 
     # Soften to avoid singularity (add large number to zeros to avoid div by zero in non-masked areas, though mask handles sum)
     # Actually simpler: just compute 1/soft_dist and mask the result.
-    soft_distances = soft_coulomb_potential(distances, alpha=0.1)
+    soft_distances = soft_coulomb_potential_sq(distances_sq, alpha=0.1)
 
     # Calculate repulsion potential
     potential = jnp.sum((1.0 / soft_distances) * mask)
