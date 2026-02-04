@@ -51,24 +51,21 @@ class FixedStepMCMC:
         grad_log_psi_fn = jax.vmap(grad_log_psi_single)
 
         # 执行多步Langevin更新
-        r_current = r_elec
-        log_psi_val = log_psi_current
-        accepted = 0.0
-        total = 0.0
-
-        for step in range(self.n_steps):
+        def step_fn(carry, _):
+            r_curr, log_psi, key, acc = carry
             key, subkey = random.split(key)
             r_proposed, log_psi_proposed, mask = self._langevin_step(
-                r_current, log_psi_val, grad_log_psi_fn, log_psi_fn, subkey
+                r_curr, log_psi, grad_log_psi_fn, log_psi_fn, subkey
             )
+            acc = acc + mask.sum()
+            return (r_proposed, log_psi_proposed, key, acc), None
 
-            # 更新统计
-            accepted = accepted + mask.sum()
-            total = total + mask.size
+        init_carry = (r_elec, log_psi_current, key, 0.0)
+        (r_current, log_psi_val, key, accepted), _ = jax.lax.scan(
+            step_fn, init_carry, length=self.n_steps
+        )
 
-            # 更新位置和波函数值
-            r_current = r_proposed
-            log_psi_val = log_psi_proposed
+        total = self.n_steps * r_elec.shape[0]
 
         # 计算接受率
         accept_rate = accepted / total
