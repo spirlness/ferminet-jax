@@ -119,14 +119,16 @@ def make_kinetic_energy(
         grad_squared_sum = jnp.sum(grad**2)
 
         n = r_flat.shape[0]
-        eye = jnp.eye(n)
+        eye = jnp.eye(n, dtype=r_flat.dtype)
 
         def body_fun(i, val):
             e_i = eye[i]
             _, dgrad = jax.jvp(grad_log_psi_flat, (r_flat,), (e_i,))
             return val + dgrad[i]
 
-        laplacian = jax.lax.fori_loop(0, n, body_fun, 0.0)
+        laplacian = jax.lax.fori_loop(
+            0, n, body_fun, jnp.zeros((), dtype=r_flat.dtype)
+        )
         return -0.5 * (grad_squared_sum + laplacian)
 
     return kinetic
