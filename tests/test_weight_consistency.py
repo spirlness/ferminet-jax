@@ -59,14 +59,26 @@ def test_weight_combination_consistency():
     
     # Set the same det_weights for both
     test_weights = jnp.array([1.0, 2.0, 0.5, 3.0])
-    multi_det.params['det_weights'] = test_weights
-    extended_net.params['det_weights'] = test_weights
-    
+
+    # Work on local copies of the params dictionaries to avoid direct
+    # in-place mutation of internal params mappings.
+    multi_det_params = dict(multi_det.params)
+    extended_net_params = dict(extended_net.params)
+    extended_orbitals_params = dict(extended_net.orbitals.params)
+
+    multi_det_params['det_weights'] = test_weights
+    extended_net_params['det_weights'] = test_weights
+
     # Copy determinant parameters from multi_det to extended_net
     for i in range(n_determinants):
         det_key = f'det_{i}'
-        extended_net.params[det_key] = multi_det.params[det_key]
-        extended_net.orbitals.params[det_key] = multi_det.params[det_key]
+        extended_net_params[det_key] = multi_det_params[det_key]
+        extended_orbitals_params[det_key] = multi_det_params[det_key]
+
+    # Reassign the updated params back to the objects
+    multi_det.params = multi_det_params
+    extended_net.params = extended_net_params
+    extended_net.orbitals.params = extended_orbitals_params
     
     print(f"\n3. Testing with det_weights: {test_weights}")
     
