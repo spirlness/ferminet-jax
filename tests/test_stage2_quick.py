@@ -14,7 +14,7 @@ print("\n1. Importing modules...")
 try:
     from multi_determinant import create_multi_determinant_orbitals
     from jastrow import JastrowFactor
-    from residual_layers import ResidualBlock, MultiLayerResidualBlock
+    # from residual_layers import ResidualBlock, MultiLayerResidualBlock
     from scheduler import EnergyBasedScheduler
     print("   [PASS] All modules imported")
 except Exception as e:
@@ -28,7 +28,7 @@ try:
     jastrow = JastrowFactor(n_elec=n_elec, hidden_dim=4)
 
     # Test with simple input
-    r_elec = jnp.array([[[0.5, 0.0, 0.0], [-0.5, 0.0, 0.0]])
+    r_elec = jnp.array([[[0.5, 0.0, 0.0], [-0.5, 0.0, 0.0]]])
     jastrow_val = jastrow.forward(r_elec)
     print(f"   jastrow value: {float(jastrow_val):.6f}")
     print("   [PASS] JastrowFactor works")
@@ -71,13 +71,13 @@ try:
         initial_lr=0.001,
         min_lr=1e-5,
         patience=3,
-        factor=0.5
+        decay_factor=0.5
     )
 
     # Simulate energy changes
     energies = [-2.0, -1.8, -1.6, -1.4, -1.2, -1.0, -1.05]  # Improving
     for i, energy in enumerate(energies):
-        lr = scheduler.step(jnp.array(energy))
+        lr, _, _ = scheduler.step(jnp.array(energy))
         print(f"   Step {i}: Energy={energy:.4f}, LR={lr:.6f}")
 
     print(f"   Final LR after improvements: {lr:.6f}")
@@ -125,4 +125,3 @@ except Exception as e:
 print("\n" + "="*60)
 print("Stage 2 Component Tests Complete!")
 print("="*60)
-)
