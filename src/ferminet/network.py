@@ -61,6 +61,16 @@ class ExtendedFermiNet(SimpleFermiNet):
         if self.use_jastrow:
             self.params["jastrow"] = self.jastrow.params
 
+    def get_network_info(self):
+        """
+        Returns information about the network.
+        """
+        total_parameters = sum(x.size for x in jax.tree_util.tree_leaves(self.params))
+        return {
+            'type': 'ExtendedFermiNet',
+            'total_parameters': total_parameters
+        }
+
     def multi_determinant_slater(self, orbitals_list, det_weights=None):
         """
         Calculate multi-determinant Slater combination using Log-Sum-Exp trick.
