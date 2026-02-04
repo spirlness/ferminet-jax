@@ -1,67 +1,60 @@
-"""
-Quick test to verify energy calculation works with ExtendedFermiNet
-"""
+# pyright: reportMissingImports=false
+
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
-import jax.random as random
-from ferminet.network import ExtendedFermiNet
-from ferminet.physics import local_energy
-from configs.h2_stage2_config import get_stage2_config
 
-print("=" * 70)
-print("Quick Energy Calculation Test")
-print("=" * 70)
+from ferminet.configs import helium
+from ferminet.hamiltonian import local_energy as make_local_energy
+from ferminet.networks import make_fermi_net
+from ferminet.types import FermiNetData
 
-# Load configuration
-config = get_stage2_config('default')
 
-# Create network
-n_electrons = config['n_electrons']
-n_up = config['n_up']
-nuclei_config = config['nuclei']
+def _make_batched_local_energy(
+    apply_sign_log, charges: jnp.ndarray, nspins: tuple[int, int]
+):
+    single = make_local_energy(apply_sign_log, charges=charges, nspins=nspins)
 
-print("\nCreating network...")
-network = ExtendedFermiNet(n_electrons, n_up, nuclei_config, config['network'])
+    def batched(params, key, data: FermiNetData) -> jnp.ndarray:
+        def per_config(pos: jnp.ndarray) -> jnp.ndarray:
+            sample = FermiNetData(
+                positions=pos,
+                spins=data.spins,
+                atoms=data.atoms,
+                charges=data.charges,
+            )
+            e, _ = single(params, key, sample)
+            return e
 
-# Initialize electron positions
-key = random.PRNGKey(42)
-n_samples = 4
-nuclei_pos = nuclei_config['positions']
-n_nuclei = nuclei_pos.shape[0]
+        return jax.vmap(per_config)(data.positions)
 
-nucleus_indices = random.randint(key, (n_samples, n_electrons), 0, n_nuclei)
-key, subkey = random.split(key)
-offsets = random.normal(subkey, (n_samples, n_electrons, 3)) * 0.1
-r_elec = nuclei_pos[nucleus_indices] + offsets
+    return batched
 
-# Use params from network
-params = network.params
 
-print(f"\nTesting energy calculation for {n_samples} samples...")
+def test_local_energy_is_finite():
+    atoms = jnp.array([[0.0, 0.0, 0.0]])
+    charges = jnp.array([2.0])
+    nspins = (1, 1)
+    spins_arr = jnp.array([0, 1])
 
-# Test energy calculation for each sample
-total_energy = 0.0
-for i in range(n_samples):
-    r_single = r_elec[i]
+    cfg = helium.get_config()
+    cfg_any = cast(Any, cfg)
+    cfg_any.network.determinants = 2
+    cfg_any.network.ferminet.hidden_dims = ((16, 4),)
 
-    def log_psi_single(r):
-        r_batch = r[None, :, :]
-        return network.apply(params, r_batch)[0]
+    init_fn, apply_fn, _ = make_fermi_net(atoms, charges, nspins, cfg)
+    params = init_fn(jax.random.PRNGKey(0))
 
-    energy = local_energy(log_psi_single, r_single, nuclei_config['positions'], nuclei_config['charges'])
+    batch = 4
+    key = jax.random.PRNGKey(1)
+    positions = jax.random.normal(key, (batch, sum(nspins) * 3)) * 0.5
+    data = FermiNetData(
+        positions=positions, spins=spins_arr, atoms=atoms, charges=charges
+    )
 
-    # Convert to scalar
-    energy_scalar = float(jnp.ravel(energy)[0])
-    total_energy += energy_scalar
+    energy_fn = _make_batched_local_energy(apply_fn, charges=charges, nspins=nspins)
+    energies = energy_fn(params, key, data)
 
-    print(f"  Sample {i}: Energy = {energy_scalar:.6f} Hartree")
-
-mean_energy = total_energy / n_samples
-print(f"\nMean energy: {mean_energy:.6f} Hartree")
-print(f"Target energy: {config['target_energy']:.6f} Hartree")
-print(f"Error: {abs(mean_energy - config['target_energy']):.6f} Hartree")
-
-print("\n" + "=" * 70)
-print("Test completed!")
-print("=" * 70)
+    assert energies.shape == (batch,)
+    assert jnp.all(jnp.isfinite(energies))

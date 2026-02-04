@@ -1,127 +1,78 @@
-# Quick test for Stage 2 components
+# pyright: reportMissingImports=false
+
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
-import pickle
-from pathlib import Path
 
-print("="*60)
-print("Stage 2 Quick Component Test")
-print("="*60)
+from ferminet.configs import helium
+from ferminet.hamiltonian import local_energy as make_local_energy
+from ferminet.loss import make_loss
+from ferminet.networks import make_fermi_net, make_log_psi_apply
+from ferminet.types import FermiNetData
 
-# Test 1: Import all modules
-print("\n1. Importing modules...")
-try:
-    from multi_determinant import create_multi_determinant_orbitals
-    from jastrow import JastrowFactor
-    # from residual_layers import ResidualBlock, MultiLayerResidualBlock
-    from scheduler import EnergyBasedScheduler
-    print("   [PASS] All modules imported")
-except Exception as e:
-    print(f"   [FAIL] Import error: {e}")
-    exit(1)
 
-# Test 2: Create Jastrow factor
-print("\n2. Testing JastrowFactor...")
-try:
-    n_elec = 2
-    jastrow = JastrowFactor(n_elec=n_elec, hidden_dim=4)
-
-    # Test with simple input
-    r_elec = jnp.array([[[0.5, 0.0, 0.0], [-0.5, 0.0, 0.0]]])
-    jastrow_val = jastrow.forward(r_elec)
-    print(f"   jastrow value: {float(jastrow_val):.6f}")
-    print("   [PASS] JastrowFactor works")
-except Exception as e:
-    print(f"   [FAIL] JastrowFactor error: {e}")
-
-# Test 3: Create MultiDeterminantOrbitals
-print("\n3. Testing MultiDeterminantOrbitals...")
-try:
-    nuclei_config = {
-        'positions': jnp.array([[0.0, 0.0, 0.0], [1.4, 0.0, 0.0]]),
-        'charges': jnp.array([1.0, 1.0])
-    }
-
-    config = {
-        'single_layer_width': 8,
-        'pair_layer_width': 4,
-        'num_interaction_layers': 1,
-        'determinant_count': 2,
-    }
-
-    orbitals = create_multi_determinant_orbitals(
-        n_electrons=2,
-        n_up=1,
-        nuclei_config=nuclei_config,
-        config=config
-    )
-    print(f"   MultiDeterminantOrbitals created")
-    print(f"   Number of determinants: {orbitals.n_determinants}")
-    print("   [PASS] MultiDeterminantOrbitals works")
-except Exception as e:
-    print(f"   [FAIL] MultiDeterminantOrbitals error: {e}")
-    import traceback
-    traceback.print_exc()
-
-# Test 4: Test EnergyBasedScheduler
-print("\n4. Testing EnergyBasedScheduler...")
-try:
-    scheduler = EnergyBasedScheduler(
-        initial_lr=0.001,
-        min_lr=1e-5,
-        patience=3,
-        decay_factor=0.5
+def _tree_l2_norm(tree) -> jnp.ndarray:
+    leaves = jax.tree_util.tree_leaves(tree)
+    return jnp.sqrt(
+        jnp.sum(jnp.array([jnp.sum(jnp.square(jnp.asarray(x))) for x in leaves]))
     )
 
-    # Simulate energy changes
-    energies = [-2.0, -1.8, -1.6, -1.4, -1.2, -1.0, -1.05]  # Improving
-    for i, energy in enumerate(energies):
-        lr, _, _ = scheduler.step(jnp.array(energy))
-        print(f"   Step {i}: Energy={energy:.4f}, LR={lr:.6f}")
 
-    print(f"   Final LR after improvements: {lr:.6f}")
-    print("   [PASS] EnergyBasedScheduler works")
-except Exception as e:
-    print(f"   [FAIL] EnergyBasedScheduler error: {e}")
+def _make_batched_local_energy(
+    apply_sign_log, charges: jnp.ndarray, nspins: tuple[int, int]
+):
+    single = make_local_energy(apply_sign_log, charges=charges, nspins=nspins)
 
-# Test 5: Integration test
-print("\n5. Testing integration...")
-try:
-    config = {
-        'n_electrons': 2,
-        'n_up': 1,
-        'nuclei': nuclei_config,
-        'network': {
-            'single_layer_width': 8,
-            'pair_layer_width': 4,
-            'num_interaction_layers': 1,
-            'determinant_count': 2,
-            'use_residual': False,
-            'use_jastrow': True,
-        },
-        'mcmc': {
-            'n_samples': 32,
-            'step_size': 0.15,
-            'n_steps': 3,
-            'thermalization_steps': 10.
-        },
-        'training': {
-            'n_epochs': 5,
-            'print_interval': 1,
-        },
-        'learning_rate': 0.001,
-        'name': 'H2_Test'
-    }
+    def batched(params, key, data: FermiNetData) -> jnp.ndarray:
+        def per_config(pos: jnp.ndarray) -> jnp.ndarray:
+            sample = FermiNetData(
+                positions=pos,
+                spins=data.spins,
+                atoms=data.atoms,
+                charges=data.charges,
+            )
+            e, _ = single(params, key, sample)
+            return e
 
-    print(f"   Config created")
-    print(f"   Network: {config['network']['determinant_count']} determinants")
-    print(f"   Samples: {config['mcmc']['n_samples']}")
-    print(f"   Epochs: {config['training']['n_epochs']}")
-    print("   [PASS] Integration config ready")
-except Exception as e:
-    print(f"   [FAIL] Integration error: {e}")
+        return jax.vmap(per_config)(data.positions)
 
-print("\n" + "="*60)
-print("Stage 2 Component Tests Complete!")
-print("="*60)
+    return batched
+
+
+def test_loss_smoke_and_value_and_grad_runs():
+    atoms = jnp.array([[0.0, 0.0, 0.0]])
+    charges = jnp.array([2.0])
+    nspins = (1, 1)
+    spins_arr = jnp.array([0, 1])
+
+    cfg = helium.get_config()
+    cfg_any = cast(Any, cfg)
+    cfg_any.network.determinants = 2
+    cfg_any.network.ferminet.hidden_dims = ((16, 4),)
+
+    init_fn, apply_fn, _ = make_fermi_net(atoms, charges, nspins, cfg)
+    params = init_fn(jax.random.PRNGKey(0))
+
+    batch = 8
+    key = jax.random.PRNGKey(1)
+    positions = jax.random.normal(key, (batch, sum(nspins) * 3)) * 0.5
+    data = FermiNetData(
+        positions=positions, spins=spins_arr, atoms=atoms, charges=charges
+    )
+
+    log_psi = make_log_psi_apply(apply_fn)
+    local_energy_fn = _make_batched_local_energy(
+        apply_fn, charges=charges, nspins=nspins
+    )
+    loss_fn = make_loss(log_psi, local_energy_fn)
+
+    (loss_value, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(
+        params, key, data
+    )
+    grad_norm = _tree_l2_norm(grads)
+
+    assert jnp.isfinite(loss_value)
+    assert jnp.isfinite(aux.variance)
+    assert jnp.all(jnp.isfinite(aux.local_energy))
+    assert grad_norm > 0.0

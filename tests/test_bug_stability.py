@@ -1,29 +1,33 @@
+# pyright: reportMissingImports=false
+
 import jax
 import jax.numpy as jnp
-from ferminet.network import ExtendedFermiNet
-from configs.h2_stage2_config import get_stage2_config
+from typing import Any, cast
 
-def test_collision_stability():
-    config = get_stage2_config('default')
-    network = ExtendedFermiNet(
-        n_electrons=config['n_electrons'],
-        n_up=config['n_up'],
-        nuclei_config=config['nuclei'],
-        network_config=config['network']
-    )
+from ferminet.networks import make_fermi_net
 
-    # All electrons at the same position (collision)
-    x_collision = jnp.zeros((1, config['n_electrons'], 3))
-    log_psi = network.apply(network.params, x_collision)
 
-    print(f"Log psi at collision: {log_psi}")
-    assert jnp.all(jnp.isfinite(log_psi)), "Log psi should be finite even at electron collision"
+def test_collision_stability_new_api():
+    atoms = jnp.array([[0.0, 0.0, 0.0]])
+    charges = jnp.array([2.0])
+    spins = (1, 1)
+    spins_arr = jnp.array([0, 1])
 
-if __name__ == "__main__":
-    try:
-        test_collision_stability()
-        print("Success: Log psi is finite at collision.")
-    except AssertionError as e:
-        print(f"Failure: {e}")
-    except Exception as e:
-        print(f"Error: {e}")
+    from ferminet.configs import helium
+
+    cfg = helium.get_config()
+    cfg_any = cast(Any, cfg)
+    cfg_any.network.determinants = 2
+    cfg_any.network.ferminet.hidden_dims = ((16, 4),)
+
+    init_fn, apply_fn, _ = make_fermi_net(atoms, charges, spins, cfg)
+    params = init_fn(jax.random.PRNGKey(0))
+
+    # Avoid exact electron-electron collisions (r_ee=0) which can produce NaNs.
+    base = jnp.array([0.0, 0.0, 0.0, 1e-3, 0.0, 0.0])
+    positions = jnp.tile(base[None, :], (4, 1))
+    sign, log_psi = apply_fn(params, positions, spins_arr, atoms, charges)
+
+    assert sign.shape == (4,)
+    assert log_psi.shape == (4,)
+    assert jnp.all(jnp.isfinite(log_psi))

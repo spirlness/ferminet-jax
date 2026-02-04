@@ -1,94 +1,71 @@
-"""
-测试扩展FermiNet和训练器功能
-"""
+# pyright: reportMissingImports=false
+
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
-import jax.random as random
-from ferminet.network import ExtendedFermiNet
-from ferminet.trainer import ExtendedTrainer
-from ferminet.mcmc import FixedStepMCMC
-from configs.h2_stage2_config import get_stage2_config
+
+from ferminet.configs import helium
+from ferminet.hamiltonian import local_energy as make_local_energy
+from ferminet.loss import make_loss
+from ferminet.networks import make_fermi_net, make_log_psi_apply
+from ferminet.types import FermiNetData
 
 
-def test_extended_network():
-    """测试扩展网络"""
-    print("=" * 70)
-    print("测试 1: ExtendedFermiNet")
-    print("=" * 70)
+def _make_batched_local_energy(
+    apply_sign_log, charges: jnp.ndarray, nspins: tuple[int, int]
+):
+    single = make_local_energy(apply_sign_log, charges=charges, nspins=nspins)
 
-    # 加载配置
-    config = get_stage2_config('default')
-    
-    # 初始化网络
-    network = ExtendedFermiNet(
-        n_electrons=config['n_electrons'],
-        n_up=config['n_up'],
-        nuclei_config=config['nuclei'],
-        network_config=config['network']
+    def batched(params, key, data: FermiNetData) -> jnp.ndarray:
+        def per_config(pos: jnp.ndarray) -> jnp.ndarray:
+            sample = FermiNetData(
+                positions=pos,
+                spins=data.spins,
+                atoms=data.atoms,
+                charges=data.charges,
+            )
+            e, _ = single(params, key, sample)
+            return e
+
+        return jax.vmap(per_config)(data.positions)
+
+    return batched
+
+
+def test_end_to_end_single_grad_update_runs():
+    atoms = jnp.array([[0.0, 0.0, 0.0]])
+    charges = jnp.array([2.0])
+    nspins = (1, 1)
+    spins_arr = jnp.array([0, 1])
+
+    cfg = helium.get_config()
+    cfg_any = cast(Any, cfg)
+    cfg_any.network.determinants = 2
+    cfg_any.network.ferminet.hidden_dims = ((16, 4),)
+
+    init_fn, apply_fn, _ = make_fermi_net(atoms, charges, nspins, cfg)
+    params = init_fn(jax.random.PRNGKey(0))
+
+    batch = 8
+    key = jax.random.PRNGKey(1)
+    positions = jax.random.normal(key, (batch, sum(nspins) * 3)) * 0.5
+    data = FermiNetData(
+        positions=positions, spins=spins_arr, atoms=atoms, charges=charges
     )
-    
-    # 随机输入
-    key = random.PRNGKey(42)
-    x = random.normal(key, (4, config['n_electrons'], 3))
-    
-    # 获取初始化参数
-    params = network.params
-    
-    # 前向传播
-    log_psi = network.apply(params, x)
-    
-    print(f"输入形状: {x.shape}")
-    print(f"输出形状: {log_psi.shape}")
-    print(f"前向传播成功")
-    
-    return network, params
 
-
-def test_extended_trainer():
-    """测试训练器循环"""
-    print("\n" + "=" * 70)
-    print("测试 2: ExtendedTrainer")
-    print("=" * 70)
-
-    config = get_stage2_config('default')
-    # 减少步数以便快速测试
-    config['training']['n_iterations'] = 5
-    config['mcmc']['n_steps'] = 10
-    
-    # 初始化网络
-    network = ExtendedFermiNet(
-        n_electrons=config['n_electrons'],
-        n_up=config['n_up'],
-        nuclei_config=config['nuclei'],
-        network_config=config['network']
+    log_psi = make_log_psi_apply(apply_fn)
+    local_energy_fn = _make_batched_local_energy(
+        apply_fn, charges=charges, nspins=nspins
     )
-    
-    # 初始化MCMC
-    mcmc = FixedStepMCMC(
-        n_steps=config['mcmc']['n_steps'],
-        step_size=config['mcmc']['step_size']
-    )
-    
-    # 初始化训练器
-    trainer = ExtendedTrainer(network, mcmc, config)
-    
-    print(f"训练器初始化成功: {config['name']}")
-    
-    # 模拟运行
-    print("开始运行快速训练循环...")
-    for i in range(3):
-        print(f"模拟步骤 {i+1}/3...")
-        
-    print("训练器功能验证通过")
+    loss_fn = make_loss(log_psi, local_energy_fn)
 
+    (loss0, _), grads = jax.value_and_grad(loss_fn, has_aux=True)(params, key, data)
 
-if __name__ == "__main__":
-    try:
-        test_extended_network()
-        test_extended_trainer()
-        print("\n所有测试通过!")
-    except Exception as e:
-        print(f"\n测试失败: {e}")
-        import traceback
-        traceback.print_exc()
+    step = 1e-4
+    params_new = jax.tree_util.tree_map(lambda p, g: p - step * g, params, grads)
+    loss1, _ = loss_fn(params_new, key, data)
+
+    assert jnp.isfinite(loss0)
+    assert jnp.isfinite(loss1)
+    assert jnp.abs(loss0 - loss1) > 0.0

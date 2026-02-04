@@ -1,9 +1,14 @@
-
 import time
 import jax
 import jax.numpy as jnp
 import jax.random as random
-from src.ferminet.mcmc import FixedStepMCMC
+
+import project_paths  # type: ignore
+
+project_paths.ensure_project_paths()
+
+from ferminet.mcmc import FixedStepMCMC  # type: ignore
+
 
 def benchmark():
     # Setup
@@ -22,7 +27,7 @@ def benchmark():
         "w1": random.normal(key, (input_dim, hidden_dim)),
         "b1": random.normal(key, (hidden_dim,)),
         "w2": random.normal(key, (hidden_dim, 1)),
-        "b2": random.normal(key, (1,))
+        "b2": random.normal(key, (1,)),
     }
 
     def network_apply(p, x):
@@ -34,7 +39,7 @@ def benchmark():
 
         h = jnp.tanh(flat_x @ p["w1"] + p["b1"])
         out = h @ p["w2"] + p["b2"]
-        return out.reshape(-1) # [batch]
+        return out.reshape(-1)  # [batch]
 
     mcmc = FixedStepMCMC(step_size=0.1, n_steps=10)
 
@@ -82,6 +87,7 @@ def benchmark():
     total_time = end_time - start_time
     print(f"Total time: {total_time:.4f}s")
     print(f"Time per iteration: {total_time / n_iter:.4f}s")
+
 
 if __name__ == "__main__":
     benchmark()
