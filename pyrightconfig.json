@@ -1,0 +1,17 @@
+{
+  "typeCheckingMode": "off",
+  "reportAny": "none",
+  "reportArgumentType": "none",
+  "reportDeprecated": "none",
+  "reportExplicitAny": "none",
+  "reportGeneralTypeIssues": "none",
+  "reportImplicitStringConcatenation": "none",
+  "reportMissingTypeStubs": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownLambdaType": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownParameterType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnusedCallResult": "none",
+  "reportUnusedParameter": "none"
+}

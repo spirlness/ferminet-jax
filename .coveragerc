@@ -1,0 +1,11 @@
+[run]
+branch = True
+source =
+    src/ferminet
+
+[report]
+omit =
+    tests/*
+    docs/*
+    examples/*
+    scripts/*

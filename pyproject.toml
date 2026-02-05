@@ -6,10 +6,16 @@ build-backend = "setuptools.build_meta"
 name = "ferminet-jax"
 version = "0.1.0"
 description = "JAX-based FermiNet implementation."
-readme = "CLAUDE.md"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.24",
+  "ml-collections>=0.1.1",
+  "chex>=0.1.86",
+  "optax>=0.2.3",
+  "kfac-jax>=0.0.6",
+  "absl-py>=2.0.0",
+  "attrs>=23.0.0",
 ]
 
 [project.optional-dependencies]
@@ -20,8 +26,7 @@ tpu = ["jax[tpu]>=0.4.30"]
 # Tooling for local development and tests.
 dev = ["pytest>=7.0"]
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["ferminet*"]
+exclude = ["tests*", "examples*", "docs*"]
