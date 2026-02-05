@@ -23,8 +23,13 @@ dependencies = [
 cpu = ["jax>=0.4.30"]
 gpu = ["jax[cuda12]>=0.4.30"]
 tpu = ["jax[tpu]>=0.4.30"]
-# Tooling for local development and tests.
-dev = ["pytest>=7.0"]
+
+[dependency-groups]
+dev = [
+    "jax>=0.4.30",
+    "pytest>=7.0",
+    "pytest-cov>=7.0.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
