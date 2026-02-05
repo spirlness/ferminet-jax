@@ -1,5 +1,3 @@
-from ferminet.configs import hydrogen
-from ferminet.configs import helium
-from ferminet.configs import lithium
+from ferminet.configs import helium, hydrogen, lithium
 
 __all__ = ["hydrogen", "helium", "lithium"]

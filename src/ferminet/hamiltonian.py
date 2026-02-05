@@ -6,8 +6,8 @@ from collections.abc import Callable, Sequence
 from typing import Protocol, cast
 
 import jax
-from jax import lax
 import jax.numpy as jnp
+from jax import lax
 
 from ferminet import types
 

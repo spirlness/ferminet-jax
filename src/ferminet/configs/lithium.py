@@ -1,4 +1,5 @@
 import ml_collections
+
 from ferminet import base_config
 
 

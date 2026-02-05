@@ -1,14 +1,9 @@
 import sys
-from typing import Optional
 
-from absl import app
-from absl import flags
-from absl import logging
-import ml_collections
+from absl import app, flags, logging
 from ml_collections import config_flags
 
 from ferminet import base_config
-
 
 _CONFIG = config_flags.DEFINE_config_file(
     "config",

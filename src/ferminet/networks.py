@@ -33,11 +33,7 @@ import jax
 import jax.numpy as jnp
 import ml_collections
 
-from ferminet import base_config
-from ferminet import constants
-from ferminet import network_blocks
-from ferminet import types
-
+from ferminet import base_config, constants, network_blocks, types
 
 Array = jnp.ndarray
 ParamTree = types.ParamTree
@@ -434,7 +430,7 @@ def make_fermi_net(
     n_electrons = n_up + n_down
 
     hidden_dims = _hidden_dims_from_cfg(cfg)
-    n_layers = len(hidden_dims)
+    len(hidden_dims)
     n_determinants = _determinants_from_cfg(cfg)
     bias_orbitals = _bias_orbitals_from_cfg(cfg)
     activation = _activation_from_cfg(cfg)

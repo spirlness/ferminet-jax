@@ -13,15 +13,17 @@ This implementation follows the architecture from:
   Deep Neural Networks", Physical Review Research 2, 033429 (2020).
 """
 
-from ferminet import base_config
-from ferminet import checkpoint
-from ferminet import constants
-from ferminet import envelopes
-from ferminet import hamiltonian
-from ferminet import jastrows
-from ferminet import loss
-from ferminet import mcmc
-from ferminet import network_blocks
+from ferminet import (
+    base_config,
+    checkpoint,
+    constants,
+    envelopes,
+    hamiltonian,
+    jastrows,
+    loss,
+    mcmc,
+    network_blocks,
+)
 
 try:
     from ferminet import networks
@@ -35,58 +37,46 @@ try:
 except ImportError:  # pragma: no cover - optional module.
     train = None
 from ferminet import types
-
-# Core types
-from ferminet.types import FermiNetData
-from ferminet.types import ParamTree
-from ferminet.types import Param
-from ferminet.types import InitFermiNet
-from ferminet.types import FermiNetLike
-from ferminet.types import LogFermiNetLike
-from ferminet.types import OrbitalFnLike
+from ferminet.base_config import SystemType
 
 # Configuration
 from ferminet.base_config import default as default_config
 from ferminet.base_config import resolve as resolve_config
-from ferminet.base_config import SystemType
+from ferminet.checkpoint import CheckpointData, restore_checkpoint, save_checkpoint
 
 # Constants
-from ferminet.constants import PMAP_AXIS_NAME
-from ferminet.constants import pmap
-from ferminet.constants import pmean
-from ferminet.constants import all_gather
-
-# Network blocks
-from ferminet.network_blocks import init_linear_layer
-from ferminet.network_blocks import linear_layer
-from ferminet.network_blocks import array_partitions
-from ferminet.network_blocks import split_into_blocks
+from ferminet.constants import PMAP_AXIS_NAME, all_gather, pmap, pmean
 
 # Envelopes
-from ferminet.envelopes import EnvelopeType
-from ferminet.envelopes import Envelope
-from ferminet.envelopes import make_isotropic_envelope
-
-# Jastrows
-from ferminet.jastrows import JastrowType
-from ferminet.jastrows import get_jastrow
-
-from ferminet.loss import AuxiliaryLossData
-from ferminet.loss import clip_local_energy
-from ferminet.loss import make_loss
-
+from ferminet.envelopes import Envelope, EnvelopeType, make_isotropic_envelope
 from ferminet.hamiltonian import local_energy
 
-from ferminet.mcmc import mh_update
-from ferminet.mcmc import make_mcmc_step
+# Jastrows
+from ferminet.jastrows import JastrowType, get_jastrow
+from ferminet.loss import AuxiliaryLossData, clip_local_energy, make_loss
+from ferminet.mcmc import make_mcmc_step, mh_update
 
-from ferminet.checkpoint import CheckpointData
-from ferminet.checkpoint import save_checkpoint
-from ferminet.checkpoint import restore_checkpoint
+# Network blocks
+from ferminet.network_blocks import (
+    array_partitions,
+    init_linear_layer,
+    linear_layer,
+    split_into_blocks,
+)
+
+# Core types
+from ferminet.types import (
+    FermiNetData,
+    FermiNetLike,
+    InitFermiNet,
+    LogFermiNetLike,
+    OrbitalFnLike,
+    Param,
+    ParamTree,
+)
 
 try:
-    from ferminet.networks import make_fermi_net
-    from ferminet.networks import make_log_psi_apply
+    from ferminet.networks import make_fermi_net, make_log_psi_apply
 except ImportError:  # pragma: no cover - optional module.
     make_fermi_net = None
     make_log_psi_apply = None

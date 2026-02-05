@@ -1,4 +1,5 @@
 from typing import Callable, Tuple
+
 import jax
 import jax.numpy as jnp
 import optax

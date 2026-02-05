@@ -1,6 +1,6 @@
 from typing import Sequence, Tuple
-import jax.numpy as jnp
 
+import jax.numpy as jnp
 
 ANGSTROM_TO_BOHR = 1.8897259886
 

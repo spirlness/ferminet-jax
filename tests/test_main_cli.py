@@ -2,8 +2,8 @@ import sys
 import types
 
 import ferminet
-
-from ferminet import base_config, main as main_module
+from ferminet import base_config
+from ferminet import main as main_module
 
 
 def _patch_train_module(monkeypatch, called):

@@ -1,8 +1,7 @@
-import ml_collections
-import pytest
-
 import jax
 import jax.numpy as jnp
+import ml_collections
+import pytest
 
 from ferminet import base_config, checkpoint, train, types
 

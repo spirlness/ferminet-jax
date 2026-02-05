@@ -15,9 +15,9 @@ and clipping for monitoring stability.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
 from typing import cast
-import dataclasses
 
 import chex  # type: ignore[reportMissingImports]
 import jax
@@ -25,9 +25,9 @@ import jax.numpy as jnp
 import kfac_jax
 
 try:
-    from ferminet import types, constants, hamiltonian
+    from ferminet import constants, hamiltonian, types
 except ImportError:  # pragma: no cover - optional module during bootstrap.
-    from ferminet import types, constants
+    from ferminet import constants, types
 
     hamiltonian = None
 

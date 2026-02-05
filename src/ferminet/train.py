@@ -15,10 +15,17 @@ import kfac_jax
 import ml_collections
 import optax
 
-from ferminet import base_config, checkpoint, constants, loss, mcmc, networks, types
-from ferminet import hamiltonian
+from ferminet import (
+    base_config,
+    checkpoint,
+    constants,
+    hamiltonian,
+    loss,
+    mcmc,
+    networks,
+    types,
+)
 from ferminet.utils import system as system_utils
-
 
 Array = jnp.ndarray
 ParamTree = types.ParamTree

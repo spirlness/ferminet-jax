@@ -6,8 +6,8 @@ NOTE: these functions operate on batches of MCMC configurations.
 from typing import Callable, TypeAlias, TypeVar, cast
 
 import jax
-from jax import lax
 import jax.numpy as jnp
+from jax import lax
 
 from ferminet.types import FermiNetData, LogFermiNetLike, ParamTree
 

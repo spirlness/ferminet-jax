@@ -3,9 +3,8 @@
 import jax
 import jax.numpy as jnp
 
-from ferminet.networks import make_fermi_net, make_log_psi_apply
-from ferminet.types import FermiNetData
 from ferminet.configs import helium
+from ferminet.networks import make_fermi_net, make_log_psi_apply
 
 
 def test_helium_training():
@@ -20,7 +19,7 @@ def test_helium_training():
     cfg.network.ferminet.hidden_dims = ((32, 8), (32, 8))
     cfg.log.print_every = 10
 
-    print(f"\nConfiguration:")
+    print("\nConfiguration:")
     print(f"  Batch size: {cfg.batch_size}")
     print(f"  Iterations: {cfg.optim.iterations}")
     print(f"  Determinants: {cfg.network.determinants}")
@@ -30,7 +29,7 @@ def test_helium_training():
     charges = jnp.array([2.0])
     spins = (1, 1)
 
-    print(f"\nSystem: Helium atom")
+    print("\nSystem: Helium atom")
     print(f"  Atoms: {atoms.shape}")
     print(f"  Charges: {charges}")
     print(f"  Electrons: {spins} (up, down)")

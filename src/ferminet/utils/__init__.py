@@ -1,4 +1,3 @@
-from ferminet.utils import system
-from ferminet.utils import statistics
+from ferminet.utils import statistics, system
 
 __all__ = ["system", "statistics"]

@@ -1,8 +1,9 @@
 # pyright: reportMissingImports=false
 
+from typing import Any, cast
+
 import jax
 import jax.numpy as jnp
-from typing import Any, cast
 
 from ferminet.networks import make_fermi_net
 

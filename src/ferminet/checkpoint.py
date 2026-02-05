@@ -12,8 +12,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
-import jax.numpy as jnp
-
 
 @dataclass
 class CheckpointData:

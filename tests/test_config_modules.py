@@ -1,7 +1,13 @@
 import ml_collections
 
-from ferminet.configs import helium, helium_max, helium_quick, helium_scaled
-from ferminet.configs import hydrogen, lithium
+from ferminet.configs import (
+    helium,
+    helium_max,
+    helium_quick,
+    helium_scaled,
+    hydrogen,
+    lithium,
+)
 
 
 def _assert_basic_config(cfg: ml_collections.ConfigDict) -> None:
