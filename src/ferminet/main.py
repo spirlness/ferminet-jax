@@ -35,10 +35,23 @@ def main(argv):
     try:
         from ferminet import train
 
+        if train is None:
+            logging.error(
+                "train module is None - likely a silent import failure in __init__.py"
+            )
+            logging.error("Try importing directly: python -c 'import ferminet.train'")
+            sys.exit(1)
+
         train.train(cfg)
     except ImportError as e:
         logging.error("Could not import train module: %s", e)
         logging.error("Make sure all dependencies are installed")
+        sys.exit(1)
+    except AttributeError as e:
+        logging.error("AttributeError when calling train: %s", e)
+        logging.error(
+            "This may indicate a missing or failed import. Try: python -c 'import ferminet.train'"
+        )
         sys.exit(1)
 
 

@@ -22,6 +22,7 @@ import dataclasses
 import chex  # type: ignore[reportMissingImports]
 import jax
 import jax.numpy as jnp
+import kfac_jax
 
 try:
     from ferminet import types, constants, hamiltonian
@@ -212,7 +213,9 @@ def make_loss(
             tuple[Array, Array],
             jax.jvp(log_psi_params, (params,), (params_t,)),
         )
-        del log_psi_value
+
+        kfac_jax.register_normal_predictive_distribution(log_psi_value[:, None])
+
         centered_energy = local_energy - jnp.mean(local_energy)
         d_loss = 2.0 * jnp.mean(centered_energy * d_log_psi)
 

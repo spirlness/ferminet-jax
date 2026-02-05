@@ -13,7 +13,7 @@ dependencies = [
   "ml-collections>=0.1.1",
   "chex>=0.1.86",
   "optax>=0.2.3",
-  "kfac-jax>=0.0.6",
+  "kfac-jax @ git+https://github.com/google-deepmind/kfac-jax",
   "absl-py>=2.0.0",
   "attrs>=23.0.0",
 ]
@@ -26,7 +26,7 @@ tpu = ["jax[tpu]>=0.4.30"]
 
 [dependency-groups]
 dev = [
-    "jax>=0.4.30",
+    "jax[cuda12]>=0.4.30",
     "pytest>=7.0",
     "pytest-cov>=7.0.0",
 ]

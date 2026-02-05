@@ -417,8 +417,8 @@ tpu = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "jax", version = "0.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, extra = ["cuda12"], marker = "python_full_version < '3.11'" },
+    { name = "jax", version = "0.9.0", source = { registry = "https://pypi.org/simple" }, extra = ["cuda12"], marker = "python_full_version >= '3.11'" },
     { name = "pytest" },
     { name = "pytest-cov" },
 ]
@@ -431,7 +431,7 @@ requires-dist = [
     { name = "jax", marker = "extra == 'cpu'", specifier = ">=0.4.30" },
     { name = "jax", extras = ["cuda12"], marker = "extra == 'gpu'", specifier = ">=0.4.30" },
     { name = "jax", extras = ["tpu"], marker = "extra == 'tpu'", specifier = ">=0.4.30" },
-    { name = "kfac-jax", specifier = ">=0.0.6" },
+    { name = "kfac-jax", git = "https://github.com/google-deepmind/kfac-jax" },
     { name = "ml-collections", specifier = ">=0.1.1" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "optax", specifier = ">=0.2.3" },
@@ -440,7 +440,7 @@ provides-extras = ["cpu", "gpu", "tpu"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "jax", specifier = ">=0.4.30" },
+    { name = "jax", extras = ["cuda12"], specifier = ">=0.4.30" },
     { name = "pytest", specifier = ">=7.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
 ]
@@ -726,7 +726,7 @@ wheels = [
 [[package]]
 name = "kfac-jax"
 version = "0.0.7"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/google-deepmind/kfac-jax#7331c3ebc03bb0899dda45c5fc6a1caaf306ff7a" }
 dependencies = [
     { name = "absl-py" },
     { name = "distrax", version = "0.1.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -741,10 +741,6 @@ dependencies = [
     { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "optax" },
     { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/91/49/da700a2ce15d1f783bc0b0d13769f928644fa703e12b279e92ab19c97418/kfac_jax-0.0.7.tar.gz", hash = "sha256:5f0436691bf7673c49e975f6b2cb5156e23199823b55e71c276af4daa19d08a2", size = 147847, upload-time = "2025-05-20T17:49:23.61Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e9/83/168692a395c8a64622f78fc8d3d45e108914b8a0f549398417560d3bd3e3/kfac_jax-0.0.7-py3-none-any.whl", hash = "sha256:a352f51e7331c62db71b1e4a10fc8c1b2191280b40eddace4531ef1021dc7698", size = 160972, upload-time = "2025-05-20T17:49:21.704Z" },
 ]
 
 [[package]]

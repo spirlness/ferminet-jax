@@ -62,7 +62,8 @@ def _filter_kwargs(fn: Callable[..., Any], kwargs: Mapping[str, Any]) -> dict[st
 
 
 def _replicate_tree(tree: Any, devices: Sequence[jax.Device]) -> Any:
-    return jax.device_put_replicated(tree, devices)
+    del devices
+    return kfac_jax.utils.replicate_all_local_devices(tree)
 
 
 def _shard_array(arr: Array, device_count: int) -> Array:
@@ -73,7 +74,12 @@ def _shard_array(arr: Array, device_count: int) -> Array:
         )
     per_device = arr.shape[0] // device_count
     new_shape = (device_count, per_device) + arr.shape[1:]
-    return jnp.reshape(arr, new_shape)
+    reshaped = jnp.reshape(arr, new_shape)
+    return kfac_jax.utils.broadcast_all_local_devices(reshaped)
+
+
+def _p_split(key: jax.Array) -> tuple[jax.Array, jax.Array]:
+    return kfac_jax.utils.p_split(key)
 
 
 def _shard_data(
@@ -234,93 +240,74 @@ def _make_local_energy_fn(
 def make_kfac_optimizer(
     cfg: ml_collections.ConfigDict,
     loss_fn: Callable[[ParamTree, jax.Array, types.FermiNetData], tuple[Array, Any]],
-) -> tuple[Callable[..., Any], Callable[..., Any]]:
-    """Create KFAC optimizer init and update functions."""
+) -> tuple[kfac_jax.Optimizer, Callable[..., Any], Callable[..., Any]]:
+    """Create KFAC optimizer init and update functions.
+
+    When multi_device=True (multiple devices), KFAC internally uses pmap and
+    expects replicated inputs. When multi_device=False (single device), KFAC
+    works on single-device inputs directly.
+
+    Returns:
+        Tuple of (optimizer, init_fn, update_fn) where optimizer is the KFAC
+        optimizer instance for direct use in the training loop.
+    """
     cfg_any = cast(Any, cfg)
 
-    def loss_and_grad(
-        params: ParamTree,
-        key: jax.Array,
-        data: types.FermiNetData,
-    ) -> tuple[tuple[Array, Any], ParamTree]:
-        return jax.value_and_grad(loss_fn, has_aux=True)(params, key, data)
+    val_and_grad = jax.value_and_grad(loss_fn, argnums=0, has_aux=True)
 
     kfac_cfg = cfg_any.optim.kfac
-    kfac_kwargs = {
-        "damping": kfac_cfg.damping,
-        "momentum": kfac_cfg.momentum,
-        "momentum_type": kfac_cfg.momentum_type,
-        "cov_update_every": kfac_cfg.cov_update_every,
-        "invert_every": kfac_cfg.invert_every,
-        "estimator": kfac_cfg.estimator,
-        "batch_size": int(kfac_cfg.batch_size),
-        "pmap_axis_name": constants.PMAP_AXIS_NAME,
-        "register_only_generic": kfac_cfg.register_only_generic,
-        "mean_center": kfac_cfg.mean_center,
-    }
-    kfac_kwargs = _filter_kwargs(kfac_jax.Optimizer, kfac_kwargs)
-    optimizer = cast(
-        Any,
-        kfac_jax.Optimizer(
-            value_and_grad_func=loss_and_grad,
-            l2_reg=kfac_cfg.l2_reg,
-            norm_constraint=kfac_cfg.norm_constraint,
-            **kfac_kwargs,
-        ),
+    lr_cfg = cfg_any.optim.lr
+
+    def learning_rate_schedule(t: jnp.ndarray) -> jnp.ndarray:
+        return lr_cfg.rate * jnp.power((1.0 / (1.0 + (t / lr_cfg.delay))), lr_cfg.decay)
+
+    # KFAC always uses multi_device=True as per official FermiNet implementation.
+    # It handles internal pmap and expects replicated inputs.
+    optimizer = kfac_jax.Optimizer(
+        value_and_grad_func=val_and_grad,
+        l2_reg=kfac_cfg.l2_reg,
+        norm_constraint=kfac_cfg.norm_constraint,
+        value_func_has_aux=True,
+        value_func_has_rng=True,
+        learning_rate_schedule=learning_rate_schedule,
+        curvature_ema=kfac_cfg.get("cov_ema_decay", 0.95),
+        inverse_update_period=kfac_cfg.invert_every,
+        min_damping=kfac_cfg.get("min_damping", 1e-4),
+        num_burnin_steps=0,
+        register_only_generic=kfac_cfg.register_only_generic,
+        estimation_mode="fisher_exact",
+        multi_device=True,
+        pmap_axis_name=constants.PMAP_AXIS_NAME,
     )
 
-    init_sig = inspect.signature(optimizer.init)
-    step_sig = inspect.signature(optimizer.step)
+    def init_fn(params: ParamTree, key: jax.Array, data: types.FermiNetData) -> Any:
+        return optimizer.init(params, key, data)
 
-    if "rng" in init_sig.parameters and "batch" in init_sig.parameters:
+    def update_fn(
+        params: ParamTree,
+        opt_state: Any,
+        key: jax.Array,
+        data: types.FermiNetData,
+        step: jnp.ndarray,
+    ) -> tuple[Any, Any, Any, Any, Mapping[str, Any]]:
+        del step
+        shared_mom = kfac_jax.utils.replicate_all_local_devices(jnp.zeros([]))
+        shared_damping = kfac_jax.utils.replicate_all_local_devices(
+            jnp.asarray(kfac_cfg.damping)
+        )
+        new_params, new_state, stats = optimizer.step(
+            params=params,
+            state=opt_state,
+            rng=key,
+            batch=data,
+            momentum=shared_mom,
+            damping=shared_damping,
+        )
+        loss_value = stats.get("loss", jnp.asarray(0.0))
+        aux = stats.get("aux", None)
+        return new_params, new_state, loss_value, aux, stats
 
-        def init_fn(params: ParamTree, key: jax.Array, data: types.FermiNetData) -> Any:
-            return optimizer.init(params, key, data)
-
-    elif "rng" in init_sig.parameters:
-
-        def init_fn(params: ParamTree, key: jax.Array, data: types.FermiNetData) -> Any:
-            del data
-            return optimizer.init(params, key)
-
-    else:
-
-        def init_fn(params: ParamTree, key: jax.Array, data: types.FermiNetData) -> Any:
-            del key, data
-            return optimizer.init(params)
-
-    if "step" in step_sig.parameters:
-
-        def update_fn(
-            params: ParamTree,
-            opt_state: Any,
-            key: jax.Array,
-            data: types.FermiNetData,
-            step: jnp.ndarray,
-        ) -> tuple[Any, Any, Any, Any, Mapping[str, Any]]:
-            new_params, new_state, stats = optimizer.step(
-                params, opt_state, key, data, step
-            )
-            loss_value = stats.get("loss", jnp.asarray(0.0))
-            aux = stats.get("aux", None)
-            return new_params, new_state, loss_value, aux, stats
-
-    else:
-
-        def update_fn(
-            params: ParamTree,
-            opt_state: Any,
-            key: jax.Array,
-            data: types.FermiNetData,
-            step: jnp.ndarray,
-        ) -> tuple[Any, Any, Any, Any, Mapping[str, Any]]:
-            del step
-            new_params, new_state, stats = optimizer.step(params, opt_state, key, data)
-            loss_value = stats.get("loss", jnp.asarray(0.0))
-            aux = stats.get("aux", None)
-            return new_params, new_state, loss_value, aux, stats
-
-    return init_fn, update_fn
+    return optimizer, init_fn, update_fn
 
 
 def make_adam_optimizer(
@@ -365,11 +352,12 @@ def make_optimizer(
     cfg: ml_collections.ConfigDict,
     loss_fn: Callable[[ParamTree, jax.Array, types.FermiNetData], tuple[Array, Any]],
     params: ParamTree,
-) -> tuple[Callable[..., Any], Callable[..., Any]]:
+) -> tuple[Optional[kfac_jax.Optimizer], Callable[..., Any], Callable[..., Any]]:
     cfg_any = cast(Any, cfg)
     if cfg_any.optim.optimizer == "kfac":
         return make_kfac_optimizer(cfg, loss_fn)
-    return make_adam_optimizer(cfg)
+    init_fn, update_fn = make_adam_optimizer(cfg)
+    return None, init_fn, update_fn
 
 
 def _prepare_system(
@@ -447,18 +435,33 @@ def _log_stats(
     step: int,
     stats: StepStats,
     walltime: float,
+    width: float | None = None,
 ) -> None:
-    print(
-        "Step {:>8d} | E {:>12.6f} | Var {:>10.6f} | pmove {:>6.3f} | "
-        "lr {:>8.5f} | {:.2f} s".format(
-            step,
-            float(stats.energy),
-            float(stats.variance),
-            float(stats.pmove),
-            float(stats.learning_rate),
-            walltime,
+    if width is not None:
+        print(
+            "Step {:>8d} | E {:>12.6f} | Var {:>10.6f} | pmove {:>6.3f} | "
+            "width {:>6.3f} | lr {:>8.5f} | {:.2f} s".format(
+                step,
+                float(stats.energy),
+                float(stats.variance),
+                float(stats.pmove),
+                width,
+                float(stats.learning_rate),
+                walltime,
+            )
         )
-    )
+    else:
+        print(
+            "Step {:>8d} | E {:>12.6f} | Var {:>10.6f} | pmove {:>6.3f} | "
+            "lr {:>8.5f} | {:.2f} s".format(
+                step,
+                float(stats.energy),
+                float(stats.variance),
+                float(stats.pmove),
+                float(stats.learning_rate),
+                walltime,
+            )
+        )
 
 
 def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
@@ -493,16 +496,6 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     params = init_fn(init_key)
     data = _init_mcmc_data(data_key, atoms, charges, spins, batch_size, ndim)
 
-    init_opt_state, update_fn = make_optimizer(cfg, loss_fn, params)
-    if cfg_any.optim.optimizer == "kfac":
-        opt_state = init_opt_state(params, key, data)
-    else:
-        opt_state = init_opt_state(params)
-
-    params, opt_state, data, step = _restore_checkpoint(
-        cfg, params, opt_state, data, step=0
-    )
-
     devices = jax.devices()
     device_count = len(devices)
     if batch_size % device_count != 0:
@@ -513,8 +506,18 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
     data = _shard_data(data, device_count)
     params = _replicate_tree(params, devices)
-    opt_state = _replicate_tree(opt_state, devices)
-    key = jax.random.split(key, device_count)
+    key = kfac_jax.utils.make_different_rng_key_on_all_devices(key)
+
+    kfac_optimizer, init_opt_state, update_fn = make_optimizer(cfg, loss_fn, params)
+    if cfg_any.optim.optimizer == "kfac":
+        key, init_keys = _p_split(key)
+        opt_state = init_opt_state(params, init_keys, data)
+    else:
+        opt_state = jax.pmap(init_opt_state)(params)
+
+    params, opt_state, data, step = _restore_checkpoint(
+        cfg, params, opt_state, data, step=0
+    )
     step_array = jnp.full((device_count,), step, dtype=jnp.int32)
 
     mcmc_step = mcmc.make_mcmc_step(
@@ -538,35 +541,78 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             _register_kfac_dense(params, data.positions)
         return loss_fn(params, key, data)
 
-    @functools.partial(constants.pmap, donate_argnums=(0, 1, 2))
-    def step_fn(
-        params: ParamTree,
-        opt_state: Any,
-        data: types.FermiNetData,
-        key: jax.Array,
-        step: jnp.ndarray,
-        mcmc_width: Any,
-    ) -> tuple[Any, Any, Any, Any, StepStats]:
-        key, mcmc_key, loss_key = jax.random.split(key, 3)
-        new_data, pmove = mcmc_step(params, data, mcmc_key, mcmc_width)
+    if cfg_any.optim.optimizer == "kfac":
+        pmapped_mcmc_step = constants.pmap(mcmc_step, donate_argnums=1)
+        shared_mom = kfac_jax.utils.replicate_all_local_devices(jnp.zeros([]))
+        shared_damping = kfac_jax.utils.replicate_all_local_devices(
+            jnp.asarray(cfg_any.optim.kfac.damping)
+        )
 
-        if cfg_any.optim.optimizer == "kfac":
-            new_params, new_opt_state, loss_value, aux, _ = update_fn(
-                params, opt_state, loss_key, new_data, step
+        def kfac_step_fn(
+            params: ParamTree,
+            opt_state: Any,
+            data: types.FermiNetData,
+            key: jax.Array,
+            step: jnp.ndarray,
+            mcmc_width: Any,
+        ) -> tuple[Any, Any, Any, Any, StepStats]:
+            mcmc_keys, loss_keys = _p_split(key)
+            new_data, pmove = pmapped_mcmc_step(params, data, mcmc_keys, mcmc_width)
+
+            new_params, new_opt_state, stats = kfac_optimizer.step(
+                params=params,
+                state=opt_state,
+                rng=loss_keys,
+                batch=new_data,
+                momentum=shared_mom,
+                damping=shared_damping,
             )
-        else:
+            loss_value = stats.get("loss", jnp.asarray(0.0))
+            aux = stats.get("aux", None)
+
+            energy = loss_value[0] if hasattr(loss_value, "__getitem__") else loss_value
+            variance = (
+                aux.variance[0]
+                if hasattr(aux.variance, "__getitem__")
+                else aux.variance
+            )
+            pmove_val = pmove[0] if hasattr(pmove, "__getitem__") else pmove
+            step_val = step[0] if hasattr(step, "__getitem__") else step
+            lr = jnp.asarray(schedule(step_val))
+            step_stats = StepStats(
+                energy=energy, variance=variance, pmove=pmove_val, learning_rate=lr
+            )
+            return new_params, new_opt_state, new_data, loss_keys, step_stats
+
+        step_fn = kfac_step_fn
+    else:
+
+        @functools.partial(constants.pmap, donate_argnums=(0, 1, 2))
+        def adam_step_fn(
+            params: ParamTree,
+            opt_state: Any,
+            data: types.FermiNetData,
+            key: jax.Array,
+            step: jnp.ndarray,
+            mcmc_width: Any,
+        ) -> tuple[Any, Any, Any, Any, StepStats]:
+            key, mcmc_key, loss_key = jax.random.split(key, 3)
+            new_data, pmove = mcmc_step(params, data, mcmc_key, mcmc_width)
+
             new_params, new_opt_state, loss_value, aux, _ = update_fn(
                 params, opt_state, loss_key, new_data, step, _loss_with_kfac
             )
 
-        energy = constants.pmean(loss_value)
-        variance = constants.pmean(aux.variance)
-        pmove = constants.pmean(pmove)
-        lr = jnp.asarray(schedule(step))
-        stats = StepStats(
-            energy=energy, variance=variance, pmove=pmove, learning_rate=lr
-        )
-        return new_params, new_opt_state, new_data, key, stats
+            energy = constants.pmean(loss_value)
+            variance = constants.pmean(aux.variance)
+            pmove = constants.pmean(pmove)
+            lr = jnp.asarray(schedule(step))
+            stats = StepStats(
+                energy=energy, variance=variance, pmove=pmove, learning_rate=lr
+            )
+            return new_params, new_opt_state, new_data, key, stats
+
+        step_fn = adam_step_fn
 
     iterations = int(cfg_any.optim.iterations)
     print_every = int(cfg_any.log.print_every)
@@ -575,21 +621,42 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
     start = time.time()
     for i in range(step, iterations):
-        step_array = jnp.full((device_count,), i, dtype=jnp.int32)  # pyright: ignore
-        step_result = step_fn(
-            params, opt_state, data, key, step_array, jnp.asarray(width)
-        )
+        width_array = jnp.full((device_count,), width)
+        step_array = jnp.full((device_count,), i, dtype=jnp.int32)
+        if cfg_any.optim.optimizer == "kfac":
+            step_result = step_fn(params, opt_state, data, key, step_array, width_array)
+        else:
+            step_array = jnp.full((device_count,), i, dtype=jnp.int32)
+            step_result = step_fn(params, opt_state, data, key, step_array, width_array)
         step_result = cast(tuple[Any, Any, Any, Any, Any], step_result)
-        params = step_result[0]
-        opt_state = step_result[1]
+        new_params = step_result[0]
+        new_opt_state = step_result[1]
         data = step_result[2]
         key = step_result[3]
         stats = step_result[4]
 
-        host_stats = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], stats)
+        if cfg_any.optim.optimizer == "kfac":
+            host_stats = jax.tree_util.tree_map(
+                lambda x: float(x) if hasattr(x, "item") else x, stats
+            )
+        else:
+            host_stats = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], stats)
+
+        energy_val = float(host_stats.energy)
+        if not jnp.isfinite(energy_val):
+            width = float(cfg_any.mcmc.move_width)
+            if (i + 1) % print_every == 0:
+                wall = time.time() - start
+                _log_stats(i + 1, host_stats, wall, width)
+                start = time.time()
+            continue
+
+        params = new_params
+        opt_state = new_opt_state
+
         if (i + 1) % print_every == 0:
             wall = time.time() - start
-            _log_stats(i + 1, host_stats, wall)
+            _log_stats(i + 1, host_stats, wall, width)
             start = time.time()
 
         if (i + 1) % int(cfg_any.mcmc.adapt_frequency) == 0:
@@ -605,16 +672,18 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             )
 
         if (i + 1) % checkpoint_every == 0:
-            host_params = jax.device_get(params)[0]
-            host_opt_state = jax.device_get(opt_state)[0]
-            host_data = jax.device_get(data)[0]
+            host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
+            host_opt_state = jax.tree_util.tree_map(
+                lambda x: jax.device_get(x)[0], opt_state
+            )
+            host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
             checkpoint.save_checkpoint(
                 save_path, i + 1, host_params, host_opt_state, host_data
             )
 
-    host_params = jax.device_get(params)[0]
-    host_opt_state = jax.device_get(opt_state)[0]
-    host_data = jax.device_get(data)[0]
+    host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
+    host_opt_state = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], opt_state)
+    host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
     return {
         "params": host_params,
         "opt_state": host_opt_state,

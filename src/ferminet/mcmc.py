@@ -63,10 +63,11 @@ def mh_accept(
     key: jax.Array,
     num_accepts: jnp.ndarray,
 ) -> tuple[jnp.ndarray, jax.Array, jnp.ndarray, jnp.ndarray]:
-    """Metropolis-Hastings accept/reject step."""
+    """Metropolis-Hastings accept/reject step with non-finite guards."""
     key, subkey = _split_key(key)
     rnd = jnp.log(jax.random.uniform(subkey, shape=ratio.shape))
-    cond = ratio > rnd
+    finite_proposal = jnp.isfinite(lp_2) & jnp.isfinite(ratio)
+    cond = (ratio > rnd) & finite_proposal
     x_new = jnp.where(cond[..., None], x2, x1)
     lp_new = jnp.where(cond, lp_2, lp_1)
     num_accepts += jnp.sum(cond)
@@ -205,16 +206,17 @@ def update_mcmc_width(
     pmoves: jnp.ndarray,
     pmove_max: float = 0.55,
     pmove_min: float = 0.5,
+    width_min: float = 0.001,
+    width_max: float = 10.0,
 ) -> tuple[float, jnp.ndarray]:
     """Adapts MCMC step width based on acceptance rate."""
-    t_since_update = t % adapt_frequency
-    pmoves = pmoves.at[t_since_update].set(jnp.asarray(pmove))
+    target = (pmove_max + pmove_min) / 2.0
+    eta = 0.5
+    max_log_change = 0.4
 
-    if t > 0 and t_since_update == 0:
-        mean_pmove = float(jnp.mean(pmoves))
-        if mean_pmove > pmove_max:
-            width *= 1.1
-        elif mean_pmove < pmove_min:
-            width /= 1.1
+    log_width = jnp.log(width)
+    delta = jnp.clip(eta * (pmove - target), -max_log_change, max_log_change)
+    log_width = log_width + delta
+    width = float(jnp.clip(jnp.exp(log_width), width_min, width_max))
 
     return width, pmoves
