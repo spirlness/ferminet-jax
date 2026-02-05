@@ -9,20 +9,43 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Install ruff
+        run: uv sync --only-group dev
+      - name: Run ruff check
+        run: uv run ruff check .
+      - name: Run ruff format
+        run: uv run ruff format --check .
+
   run-tests:
     runs-on: ubuntu-latest
+    needs: lint
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v1
+        uses: astral-sh/setup-uv@v5
 
       - name: Provision Python runtime
         run: uv python install 3.10
 
       - name: Sync dependencies
-        run: uv sync --dev --extra test
+        run: uv sync --dev --extra cpu
 
       - name: Run pytest with coverage
-        run: uv run pytest
+        run: |
+          uv run pytest --cov=ferminet --cov-report=term --cov-report=xml --cov-fail-under=80
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

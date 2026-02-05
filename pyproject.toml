@@ -26,9 +26,10 @@ tpu = ["jax[tpu]>=0.4.30"]
 
 [dependency-groups]
 dev = [
-    "jax[cuda12]>=0.4.30",
+    "jax>=0.4.30",
     "pytest>=7.0",
-    "pytest-cov>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
 ]
 
 [tool.setuptools.packages.find]
