@@ -9,6 +9,7 @@
 - [快速开始](#快速开始)
 - [项目结构](#项目结构)
 - [核心概念](#核心概念)
+- [模型架构可视化](#模型架构可视化)
 - [配置系统](#配置系统)
 - [计算流程](#计算流程)
 - [API 参考](#api-参考)
@@ -175,12 +176,42 @@ FermiNet 将多电子波函数表示为多个 Slater 行列式的加权和：
 
 ### 网络架构
 
+当前实现采用双流 FermiNet 主干：单电子流（one-electron stream）与双电子流（two-electron stream）交替交互，并在轨道层后组合多行列式。
+
+---
+
+## 模型架构可视化
+
+架构图源码：[docs/assets/architecture.dot](docs/assets/architecture.dot)
+
+```mermaid
+flowchart TD
+    A[输入: 电子坐标 x<br/>自旋 spins<br/>原子 atoms<br/>核电荷 charges] --> B[几何特征构造<br/>r_ae / r_ee 与距离范数]
+    B --> C[单电子特征 h_one<br/>含 charge 通道 + spin 通道]
+    B --> D[双电子特征 h_two<br/>含 same-spin 通道]
+
+    C --> E[交互层 Block 1]
+    D --> E
+    E --> F[交互层 Block 2~N<br/>残差连接]
+    F --> G[按自旋分流<br/>h_up / h_down]
+
+    G --> H[轨道层 up/down]
+    H --> I[多行列式组合<br/>det(up) × det(down)]
+
+    B --> J[Envelope 分支<br/>isotropic / diagonal / full]
+    J --> K[log envelope]
+
+    I --> L[log_det]
+    L --> M[log|psi| = log_det + log_env]
+    K --> M
 ```
-电子坐标 → 特征提取 → 交互层(×4) → 轨道层 → 行列式 → log|ψ|
-                         ↓
-              单电子流 + 双电子流
-              (残差连接 + LayerNorm)
-```
+
+模块对应关系（代码）：
+
+- 主网络与特征流：`src/ferminet/networks.py`
+- 包络函数工厂：`src/ferminet/envelopes.py`
+- 训练主循环：`src/ferminet/train.py`
+- 采样/能量/损失/优化：`src/ferminet/mcmc.py`、`src/ferminet/hamiltonian.py`、`src/ferminet/loss.py`、`src/ferminet/optimizers.py`
 
 ### 变分蒙特卡洛
 
