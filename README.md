@@ -129,7 +129,7 @@ cfg = helium.get_config()
 cfg.optim.iterations = 10000
 
 result = train.train(cfg)
-print(f"Final energy: {result['energy']}")
+print(f"Completed steps: {result['step']}")
 ```
 
 ---
