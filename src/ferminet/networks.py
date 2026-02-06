@@ -33,7 +33,7 @@ import jax
 import jax.numpy as jnp
 import ml_collections
 
-from ferminet import base_config, constants, network_blocks, types
+from ferminet import base_config, constants, envelopes, network_blocks, types
 from ferminet.utils.numerics import EPS
 
 Array = jnp.ndarray
@@ -297,13 +297,6 @@ def _combine_determinants(
     return total_sign, log_abs
 
 
-def _apply_envelope(r_ae_norm: Array, sigma: Array, eps: float = EPS) -> Array:
-    """Apply isotropic Gaussian envelope: exp(-sigma * |r_ae|)."""
-    decay = jnp.exp(-r_ae_norm * sigma[None, :])
-    envelope = jnp.sum(decay, axis=1)
-    return jnp.sum(jnp.log(jnp.maximum(envelope, eps)))
-
-
 def _hidden_dims_from_cfg(
     cfg: ml_collections.ConfigDict,
 ) -> tuple[tuple[int, int], ...]:
@@ -405,6 +398,42 @@ def _envelope_sigma_from_cfg(cfg: ml_collections.ConfigDict) -> float:
     return 1.0
 
 
+def _envelope_type_from_cfg(cfg: ml_collections.ConfigDict) -> str:
+    """Extract envelope type from config with ferminet override."""
+    network_cfg = _cfg_section(cfg, "network")
+    if network_cfg is not None:
+        ferminet_cfg = _cfg_section(network_cfg, "ferminet")
+        if ferminet_cfg is not None:
+            try:
+                envelope_type_value = ferminet_cfg["envelope_type"]
+            except KeyError:
+                envelope_type_value = None
+            if envelope_type_value is not None:
+                return str(envelope_type_value).lower()
+        try:
+            envelope_type_value = network_cfg["envelope_type"]
+        except KeyError:
+            envelope_type_value = None
+        if envelope_type_value is not None:
+            return str(envelope_type_value).lower()
+    return "isotropic"
+
+
+def _make_envelope_from_type(envelope_type: str) -> envelopes.Envelope:
+    """Build envelope implementation from config value."""
+    envelope_type = envelope_type.lower()
+    if envelope_type == envelopes.EnvelopeType.ISOTROPIC.value:
+        return envelopes.make_isotropic_envelope()
+    if envelope_type == envelopes.EnvelopeType.DIAGONAL.value:
+        return envelopes.make_diagonal_envelope()
+    if envelope_type == envelopes.EnvelopeType.FULL.value:
+        return envelopes.make_full_envelope()
+    raise ValueError(
+        "Unsupported envelope_type "
+        f"'{envelope_type}'. Expected one of: isotropic, diagonal, full."
+    )
+
+
 def make_fermi_net(
     atoms: jnp.ndarray,
     charges: jnp.ndarray,
@@ -436,6 +465,8 @@ def make_fermi_net(
     bias_orbitals = _bias_orbitals_from_cfg(cfg)
     activation = _activation_from_cfg(cfg)
     sigma_init = _envelope_sigma_from_cfg(cfg)
+    envelope_type = _envelope_type_from_cfg(cfg)
+    envelope_fn = _make_envelope_from_type(envelope_type)
 
     one_feat_dim = n_atoms * (ndim + 1)
     two_feat_dim = ndim + 1
@@ -482,7 +513,11 @@ def make_fermi_net(
 
         params["layers"] = cast(ParamTree, layers)
         params["orbitals"] = cast(ParamTree, orbitals)
-        params["envelope_sigma"] = jnp.ones((n_atoms,)) * sigma_init
+        envelope_params = dict(envelope_fn.init(n_atoms, (1,), ndim))
+        for key_name, value in tuple(envelope_params.items()):
+            if key_name.startswith("sigma_"):
+                envelope_params[key_name] = jnp.asarray(value) * sigma_init
+        params["envelope"] = cast(ParamTree, envelope_params)
 
         return cast(ParamTree, params)
 
@@ -525,8 +560,13 @@ def make_fermi_net(
         )
 
         sign, log_det = _combine_determinants(orb_up, orb_down, n_up, n_down)
-        sigma = cast(Array, params_map["envelope_sigma"])
-        log_env = _apply_envelope(r_ae_norm, sigma)
+        envelope_params = cast(envelopes.EnvelopeParams, params_map["envelope"])
+        envelope_outputs = envelope_fn.apply(envelope_params, r_ae, r_ae_norm, (1,))
+        envelope_val = envelope_outputs[0]
+        if envelope_val is None:
+            log_env = jnp.asarray(0.0)
+        else:
+            log_env = jnp.sum(jnp.log(jnp.maximum(envelope_val[:, 0], EPS)))
         log_psi = log_det + log_env
 
         return sign, log_psi, (orb_up, orb_down)
