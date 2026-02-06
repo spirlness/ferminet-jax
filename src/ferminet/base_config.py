@@ -65,6 +65,8 @@ def default() -> ml_collections.ConfigDict:
                 "summary_every": 100,
                 "checkpoint_every": 10000,
                 "save_path": "./checkpoints",
+                "restore": False,
+                "restore_path": None,
                 "save_all": False,
                 "print_every": 10,
                 "history_every": 10,

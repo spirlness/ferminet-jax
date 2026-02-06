@@ -42,7 +42,13 @@ from ferminet.base_config import SystemType
 # Configuration
 from ferminet.base_config import default as default_config
 from ferminet.base_config import resolve as resolve_config
-from ferminet.checkpoint import CheckpointData, restore_checkpoint, save_checkpoint
+from ferminet.checkpoint import (
+    CheckpointData,
+    load_model,
+    restore_checkpoint,
+    save_checkpoint,
+    save_model,
+)
 
 # Constants
 from ferminet.constants import PMAP_AXIS_NAME, all_gather, pmap, pmean
@@ -106,6 +112,8 @@ __all__ = [
     "default_config",
     "resolve_config",
     "SystemType",
+    "save_model",
+    "load_model",
     # Constants
     "PMAP_AXIS_NAME",
     "pmap",

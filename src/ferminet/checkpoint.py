@@ -77,6 +77,42 @@ def save_checkpoint(
     return checkpoint_path
 
 
+def save_model(path: str, params: Any) -> Path:
+    """Save model parameters only.
+
+    Args:
+        path: Target file path (for example, ``./checkpoints/model.pkl``).
+        params: Network parameter pytree.
+
+    Returns:
+        Path to the written model file.
+    """
+    model_path = Path(path)
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(model_path, "wb") as f:
+        pickle.dump({"params": params}, f)
+    return model_path
+
+
+def load_model(path: str) -> Any:
+    """Load model parameters saved by :func:`save_model`.
+
+    Args:
+        path: Model file path.
+
+    Returns:
+        Parameter pytree.
+    """
+    model_path = Path(path)
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model file not found: {model_path}")
+    with open(model_path, "rb") as f:
+        data = pickle.load(f)
+    if isinstance(data, dict) and "params" in data:
+        return data["params"]
+    return data
+
+
 def restore_checkpoint(path: str) -> CheckpointData:
     """Restore training checkpoint from disk.
 

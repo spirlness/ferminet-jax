@@ -11,8 +11,50 @@ _CONFIG = config_flags.DEFINE_config_file(
     "Path to config file.",
     lock_config=True,
 )
+_RESTORE_PATH = flags.DEFINE_string(
+    "restore_path",
+    None,
+    "Optional checkpoint file path to resume training from.",
+)
+_RESUME_LATEST = flags.DEFINE_bool(
+    "resume_latest",
+    False,
+    "Resume from latest checkpoint under cfg.log.save_path.",
+)
+_SAVE_PATH = flags.DEFINE_string(
+    "save_path",
+    None,
+    "Optional override for cfg.log.save_path.",
+)
 
 FLAGS = flags.FLAGS
+
+
+def _safe_flag_value(flag_holder, default):
+    """Return flag value if parsed, otherwise default."""
+    try:
+        return flag_holder.value
+    except flags.UnparsedFlagAccessError:
+        return default
+
+
+def _apply_checkpoint_overrides(
+    cfg,
+    restore_path: str | None,
+    resume_latest: bool,
+    save_path: str | None,
+):
+    """Apply CLI checkpoint options to config in-place."""
+    with cfg.unlocked():
+        if save_path:
+            cfg.log.save_path = save_path
+        if restore_path:
+            cfg.log.restore_path = restore_path
+            cfg.log.restore = False
+        elif resume_latest:
+            cfg.log.restore = True
+            cfg.log.restore_path = None
+    return cfg
 
 
 def main(argv):
@@ -23,6 +65,20 @@ def main(argv):
     if cfg is None:
         logging.info("No config provided, using default config")
         cfg = base_config.default()
+
+    cfg = _apply_checkpoint_overrides(
+        cfg,
+        _safe_flag_value(_RESTORE_PATH, None),
+        bool(_safe_flag_value(_RESUME_LATEST, False)),
+        _safe_flag_value(_SAVE_PATH, None),
+    )
+
+    restore_path_value = _safe_flag_value(_RESTORE_PATH, None)
+    resume_latest_value = bool(_safe_flag_value(_RESUME_LATEST, False))
+    if restore_path_value and resume_latest_value:
+        logging.warning(
+            "Both --restore_path and --resume_latest were set; using --restore_path"
+        )
 
     logging.info("FermiNet training")
     logging.info("Config:\n%s", cfg)

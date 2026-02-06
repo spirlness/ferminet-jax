@@ -63,3 +63,11 @@ def test_find_latest_checkpoint_empty_directory(tmp_path):
     empty_dir = tmp_path / "empty"
     empty_dir.mkdir()
     assert checkpoint.find_latest_checkpoint(str(empty_dir)) is None
+
+
+def test_save_and_load_model_roundtrip(tmp_path):
+    params = {"w": jnp.array([1.0, 2.0, 3.0])}
+    model_path = tmp_path / "model.pkl"
+    written = checkpoint.save_model(str(model_path), params)
+    loaded = checkpoint.load_model(str(written))
+    assert jnp.allclose(loaded["w"], params["w"])
