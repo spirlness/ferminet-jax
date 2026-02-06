@@ -32,3 +32,26 @@ def test_network_outputs_finite_for_extreme_inputs():
     for x in (positions, positions_large, positions_collision):
         _, log_psi = apply_fn(params, x, spins_arr, atoms, charges)
         assert jnp.all(jnp.isfinite(log_psi))
+
+
+def test_network_responds_to_spin_and_charge_features():
+    atoms = jnp.array([[0.0, 0.0, 0.0]])
+    charges = jnp.array([2.0])
+    nspins = (1, 1)
+    spins_arr = jnp.array([0, 1])
+
+    cfg = helium.get_config()
+    cfg_any = cast(Any, cfg)
+    cfg_any.network.determinants = 2
+    cfg_any.network.ferminet.hidden_dims = ((16, 4),)
+
+    init_fn, apply_fn, _ = make_fermi_net(atoms, charges, nspins, cfg)
+    params = init_fn(jax.random.PRNGKey(0))
+    x = jnp.array([[0.1, 0.0, 0.0, -0.1, 0.0, 0.0]])
+
+    _, log_base = apply_fn(params, x, spins_arr, atoms, charges)
+    _, log_spin = apply_fn(params, x, jnp.array([1, 0]), atoms, charges)
+    _, log_charge = apply_fn(params, x, spins_arr, atoms, jnp.array([1.0]))
+
+    assert not jnp.allclose(log_base, log_spin)
+    assert not jnp.allclose(log_base, log_charge)

@@ -112,6 +112,34 @@ def _normalize_electrons(
     )
 
 
+def _normalize_spin_labels(spins: Array, n_electrons: int) -> Array:
+    """Normalize spin labels to shape (n_electrons,)."""
+    spins_arr = jnp.asarray(spins)
+    if spins_arr.ndim == 1:
+        if spins_arr.shape[0] != n_electrons:
+            raise ValueError(
+                f"spins must have length {n_electrons}; got {spins_arr.shape[0]}"
+            )
+        return spins_arr
+    if spins_arr.ndim >= 2 and spins_arr.shape[-1] == n_electrons:
+        return jnp.reshape(spins_arr, (-1, n_electrons))[0]
+    raise ValueError("spins must have shape (n_electrons,) or (..., n_electrons)")
+
+
+def _normalize_charges(charges: Array, n_atoms: int) -> Array:
+    """Normalize charges to shape (n_atoms,)."""
+    charges_arr = jnp.asarray(charges)
+    if charges_arr.ndim == 1:
+        if charges_arr.shape[0] != n_atoms:
+            raise ValueError(
+                f"charges must have length {n_atoms}; got {charges_arr.shape[0]}"
+            )
+        return charges_arr
+    if charges_arr.ndim >= 2 and charges_arr.shape[-1] == n_atoms:
+        return jnp.reshape(charges_arr, (-1, n_atoms))[0]
+    raise ValueError("charges must have shape (n_atoms,) or (..., n_atoms)")
+
+
 def _activation_from_name(name: str) -> Callable[[Array], Array]:
     """Return activation function by name."""
     name = name.lower()
@@ -155,9 +183,28 @@ def _construct_one_electron_features(r_ae: Array, r_ae_norm: Array) -> Array:
     return features.reshape(r_ae.shape[0], -1)
 
 
-def _construct_two_electron_features(r_ee: Array, r_ee_norm: Array) -> Array:
+def _augment_one_electron_features(
+    h_one: Array,
+    r_ae_norm: Array,
+    spin_labels: Array,
+    charges: Array,
+) -> Array:
+    """Append spin- and charge-aware channels to one-electron features."""
+    charge_channels = jnp.broadcast_to(
+        charges[None, :, None], r_ae_norm[..., None].shape
+    )
+    charge_channels = charge_channels.reshape(r_ae_norm.shape[0], -1)
+    spin_channel = (2.0 * jnp.asarray(spin_labels) - 1.0)[:, None]
+    return jnp.concatenate([h_one, charge_channels, spin_channel], axis=-1)
+
+
+def _construct_two_electron_features(
+    r_ee: Array, r_ee_norm: Array, spin_labels: Array
+) -> Array:
     """Construct two-electron features from electron-electron vectors."""
-    return jnp.concatenate([r_ee, r_ee_norm[..., None]], axis=-1)
+    spin_labels = jnp.asarray(spin_labels)
+    same_spin = (spin_labels[:, None] == spin_labels[None, :]).astype(r_ee.dtype)
+    return jnp.concatenate([r_ee, r_ee_norm[..., None], same_spin[..., None]], axis=-1)
 
 
 def _electron_electron_mask(n_electrons: int) -> Array:
@@ -468,8 +515,8 @@ def make_fermi_net(
     envelope_type = _envelope_type_from_cfg(cfg)
     envelope_fn = _make_envelope_from_type(envelope_type)
 
-    one_feat_dim = n_atoms * (ndim + 1)
-    two_feat_dim = ndim + 1
+    one_feat_dim = n_atoms * (ndim + 1) + n_atoms + 1
+    two_feat_dim = ndim + 2
 
     def init(key: jax.Array) -> ParamTree:
         """Initialize FermiNet parameters."""
@@ -525,6 +572,8 @@ def make_fermi_net(
         params: ParamMapping,
         electrons_single: Array,
         atoms_in: Array,
+        spins_in: Array,
+        charges_in: Array,
     ) -> tuple[Array, Array, tuple[Array, Array]]:
         """Forward pass for a single configuration."""
         params_map = params
@@ -536,7 +585,8 @@ def make_fermi_net(
         r_ee_norm = jnp.sqrt(jnp.sum(r_ee**2, axis=-1) + EPS)
 
         h_one = _construct_one_electron_features(r_ae, r_ae_norm)
-        h_two = _construct_two_electron_features(r_ee, r_ee_norm)
+        h_one = _augment_one_electron_features(h_one, r_ae_norm, spins_in, charges_in)
+        h_two = _construct_two_electron_features(r_ee, r_ee_norm, spins_in)
         mask = _electron_electron_mask(n_electrons)
 
         layers = cast(Sequence[Mapping[str, Mapping[str, Array]]], params_map["layers"])
@@ -583,21 +633,32 @@ def make_fermi_net(
         Args:
             params: Parameter tree from init.
             electrons: Electron positions.
-            spins: Spin labels (unused, spin counts are fixed).
+            spins: Spin labels for per-electron conditioning.
             atoms: Atomic positions.
-            charges: Atomic charges (unused).
+            charges: Atomic charges for per-atom conditioning.
         """
-        del spins, charges
         params_map: ParamMapping = cast(ParamMapping, params)
         atoms_norm = _normalize_atoms(atoms, ndim)
         electrons_norm = _normalize_electrons(electrons, n_electrons, ndim)
+        spins_norm = _normalize_spin_labels(spins, n_electrons)
+        charges_norm = _normalize_charges(charges, n_atoms)
 
         if electrons_norm.ndim == 2:
-            sign, log_psi, _ = _forward_single(params_map, electrons_norm, atoms_norm)
+            sign, log_psi, _ = _forward_single(
+                params_map, electrons_norm, atoms_norm, spins_norm, charges_norm
+            )
             return sign, log_psi
 
         if electrons_norm.ndim == 3:
-            vmapped = jax.vmap(lambda e: _forward_single(params_map, e, atoms_norm)[:2])
+            vmapped = jax.vmap(
+                lambda e: _forward_single(
+                    params_map,
+                    e,
+                    atoms_norm,
+                    spins_norm,
+                    charges_norm,
+                )[:2]
+            )
             sign_batch, log_batch = vmapped(electrons_norm)
             return sign_batch, log_batch
 
@@ -611,19 +672,28 @@ def make_fermi_net(
         charges: Array,
     ) -> Sequence[Array]:
         """Return per-spin orbital matrices for the given positions."""
-        del spins, charges
         params_map: ParamMapping = cast(ParamMapping, params)
         atoms_norm = _normalize_atoms(atoms, ndim)
         electrons_norm = _normalize_electrons(pos, n_electrons, ndim)
+        spins_norm = _normalize_spin_labels(spins, n_electrons)
+        charges_norm = _normalize_charges(charges, n_atoms)
 
         if electrons_norm.ndim == 2:
             _, _, (orb_up, orb_down) = _forward_single(
-                params_map, electrons_norm, atoms_norm
+                params_map, electrons_norm, atoms_norm, spins_norm, charges_norm
             )
             return (orb_up, orb_down)
 
         if electrons_norm.ndim == 3:
-            vmapped = jax.vmap(lambda e: _forward_single(params_map, e, atoms_norm)[2])
+            vmapped = jax.vmap(
+                lambda e: _forward_single(
+                    params_map,
+                    e,
+                    atoms_norm,
+                    spins_norm,
+                    charges_norm,
+                )[2]
+            )
             orb_up, orb_down = vmapped(electrons_norm)
             return (orb_up, orb_down)
 
