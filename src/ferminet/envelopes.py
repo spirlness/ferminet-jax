@@ -8,6 +8,8 @@ from typing import cast
 import jax
 import jax.numpy as jnp
 
+from ferminet.utils.numerics import EPS
+
 
 class EnvelopeType(enum.Enum):
     """Supported envelope types."""
@@ -163,7 +165,7 @@ def make_full_envelope() -> Envelope:
                 ae_expanded = ae[:, :, None, :, None]
                 eta_expanded = eta[None, :, :, :, :]
                 ae_transformed = jnp.sum(ae_expanded * eta_expanded, axis=-2)
-                r_transformed = jnp.sqrt(jnp.sum(ae_transformed**2, axis=-1) + 1.0e-12)
+                r_transformed = jnp.sqrt(jnp.sum(ae_transformed**2, axis=-1) + EPS)
                 envelope = jnp.sum(pi * jnp.exp(-sigma * r_transformed), axis=1)
                 envelopes.append(envelope)
             else:

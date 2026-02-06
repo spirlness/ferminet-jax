@@ -34,6 +34,7 @@ import jax.numpy as jnp
 import ml_collections
 
 from ferminet import base_config, constants, network_blocks, types
+from ferminet.utils.numerics import EPS
 
 Array = jnp.ndarray
 ParamTree = types.ParamTree
@@ -274,7 +275,7 @@ def _combine_determinants(
     orbitals_down: Array,
     n_up: int,
     n_down: int,
-    eps: float = 1.0e-12,
+    eps: float = EPS,
 ) -> tuple[Array, Array]:
     """Combine multi-determinant Slater determinants.
 
@@ -296,7 +297,7 @@ def _combine_determinants(
     return total_sign, log_abs
 
 
-def _apply_envelope(r_ae_norm: Array, sigma: Array, eps: float = 1.0e-12) -> Array:
+def _apply_envelope(r_ae_norm: Array, sigma: Array, eps: float = EPS) -> Array:
     """Apply isotropic Gaussian envelope: exp(-sigma * |r_ae|)."""
     decay = jnp.exp(-r_ae_norm * sigma[None, :])
     envelope = jnp.sum(decay, axis=1)
@@ -496,9 +497,8 @@ def make_fermi_net(
         r_ee = _pairwise_electron_electron_vectors(electrons_single)
         # Use an epsilon-stabilized norm to avoid NaN gradients at zero distance
         # (notably the r_ee diagonal self-distances).
-        eps = jnp.asarray(1.0e-12, dtype=electrons_single.dtype)
-        r_ae_norm = jnp.sqrt(jnp.sum(r_ae**2, axis=-1) + eps)
-        r_ee_norm = jnp.sqrt(jnp.sum(r_ee**2, axis=-1) + eps)
+        r_ae_norm = jnp.sqrt(jnp.sum(r_ae**2, axis=-1) + EPS)
+        r_ee_norm = jnp.sqrt(jnp.sum(r_ee**2, axis=-1) + EPS)
 
         h_one = _construct_one_electron_features(r_ae, r_ae_norm)
         h_two = _construct_two_electron_features(r_ee, r_ee_norm)

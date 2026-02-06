@@ -10,6 +10,7 @@ import jax.numpy as jnp
 from jax import lax
 
 from ferminet import types
+from ferminet.utils.numerics import EPS, safe_inv, safe_norm
 
 
 class LocalEnergy(Protocol):
@@ -107,7 +108,7 @@ def local_kinetic_energy(
 def potential_electron_electron(r_ee: jnp.ndarray) -> jnp.ndarray:
     """Electron-electron repulsion: sum_{i<j} 1/r_ij."""
     r_ee_flat = r_ee[jnp.triu_indices_from(r_ee[..., 0], k=1)]
-    return jnp.sum(1.0 / r_ee_flat)
+    return jnp.sum(safe_inv(r_ee_flat))
 
 
 def potential_electron_nuclear(
@@ -115,7 +116,7 @@ def potential_electron_nuclear(
     r_ae: jnp.ndarray,
 ) -> jnp.ndarray:
     """Electron-nuclear attraction: -sum_i sum_j Z_j/r_ij."""
-    return -jnp.sum(charges / r_ae[..., 0])
+    return -jnp.sum(charges / (r_ae[..., 0] + EPS))
 
 
 def potential_nuclear_nuclear(
@@ -124,7 +125,8 @@ def potential_nuclear_nuclear(
 ) -> jnp.ndarray:
     """Nuclear-nuclear repulsion: sum_{i<j} Z_i*Z_j/r_ij."""
     r_aa = cast(
-        jnp.ndarray, jnp.linalg.norm(atoms[None, ...] - atoms[:, None], axis=-1)
+        jnp.ndarray,
+        jnp.sqrt(jnp.sum(jnp.square(atoms[None, ...] - atoms[:, None]), axis=-1) + EPS),
     )
     return jnp.sum(jnp.triu((charges[None, ...] * charges[..., None]) / r_aa, k=1))
 
@@ -191,11 +193,9 @@ def construct_input_features(
     ae = jnp.reshape(pos, [-1, 1, ndim]) - atoms[None, ...]
     ee = jnp.reshape(pos, [1, -1, ndim]) - jnp.reshape(pos, [-1, 1, ndim])
 
-    r_ae = cast(jnp.ndarray, jnp.linalg.norm(ae, axis=2, keepdims=True))
+    r_ae = safe_norm(ae, axis=2, keepdims=True)
     n = ee.shape[0]
-    r_ee = cast(
-        jnp.ndarray,
-        jnp.linalg.norm(ee + jnp.eye(n)[..., None], axis=-1) * (1.0 - jnp.eye(n)),
-    )
+    # mask diagonal to avoid self-interaction in potentials
+    r_ee = safe_norm(ee, axis=-1) * (1.0 - jnp.eye(n))
 
     return ae, ee, r_ae, r_ee[..., None]
