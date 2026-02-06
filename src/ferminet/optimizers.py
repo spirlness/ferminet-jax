@@ -106,6 +106,13 @@ def make_kfac_optimizer(
         pmap_axis_name=constants.PMAP_AXIS_NAME,
     )
 
+    shared_mom = kfac_jax.utils.replicate_all_local_devices(
+        jnp.asarray(kfac_cfg.momentum)
+    )
+    shared_damping = kfac_jax.utils.replicate_all_local_devices(
+        jnp.asarray(kfac_cfg.damping)
+    )
+
     def init_fn(params: ParamTree, key: jax.Array, data: types.FermiNetData) -> Any:
         return optimizer.init(params, key, data)
 
@@ -117,12 +124,6 @@ def make_kfac_optimizer(
         step: jnp.ndarray,
     ) -> tuple[Any, Any, Any, Any, Mapping[str, Any]]:
         del step
-        shared_mom = kfac_jax.utils.replicate_all_local_devices(
-            jnp.asarray(kfac_cfg.momentum)
-        )
-        shared_damping = kfac_jax.utils.replicate_all_local_devices(
-            jnp.asarray(kfac_cfg.damping)
-        )
         new_params, new_state, stats = optimizer.step(
             params=params,
             state=opt_state,

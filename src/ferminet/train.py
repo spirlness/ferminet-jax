@@ -47,6 +47,15 @@ def _filter_kwargs(fn: Any, kwargs: Mapping[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in kwargs.items() if k in params}
 
 
+def _to_host_scalar(value: Any) -> float:
+    """Convert a scalar-like value to a Python float with minimal transfer."""
+    arr = jnp.asarray(value)
+    host = jnp.asarray(jax.device_get(arr))
+    if host.ndim > 0:
+        host = jnp.reshape(host, (-1,))[0]
+    return float(host)
+
+
 def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     """Run VMC training with KFAC or Adam optimizer."""
     cfg = base_config.resolve(cfg)
@@ -174,6 +183,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     iterations = int(cfg_any.optim.iterations)
     print_every = int(cfg_any.log.print_every)
     checkpoint_every = int(cfg_any.log.checkpoint_every)
+    adapt_frequency = int(cfg_any.mcmc.adapt_frequency)
     save_path = cfg_any.log.save_path
 
     start = time.time()
@@ -185,35 +195,40 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         step_result = cast(tuple[Any, Any, Any, Any, Any], step_result)
         new_params, new_opt_state, data, key, stats = step_result
 
-        if cfg_any.optim.optimizer == "kfac":
-            host_stats = jax.tree_util.tree_map(
-                lambda x: float(x) if hasattr(x, "item") else x, stats
-            )
-        else:
-            host_stats = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], stats)
-
-        energy_val = float(host_stats.energy)
+        energy_val = _to_host_scalar(stats.energy)
         if not jnp.isfinite(energy_val):
             width = float(cfg_any.mcmc.move_width)
             if (i + 1) % print_every == 0:
+                log_stats = train_utils.StepStats(
+                    energy=energy_val,
+                    variance=_to_host_scalar(stats.variance),
+                    pmove=_to_host_scalar(stats.pmove),
+                    learning_rate=_to_host_scalar(stats.learning_rate),
+                )
                 wall = time.time() - start
-                train_utils.log_stats(i + 1, host_stats, wall, width)
+                train_utils.log_stats(i + 1, log_stats, wall, width)
                 start = time.time()
             continue
 
         params, opt_state = new_params, new_opt_state
 
         if (i + 1) % print_every == 0:
+            log_stats = train_utils.StepStats(
+                energy=energy_val,
+                variance=_to_host_scalar(stats.variance),
+                pmove=_to_host_scalar(stats.pmove),
+                learning_rate=_to_host_scalar(stats.learning_rate),
+            )
             wall = time.time() - start
-            train_utils.log_stats(i + 1, host_stats, wall, width)
+            train_utils.log_stats(i + 1, log_stats, wall, width)
             start = time.time()
 
-        if (i + 1) % int(cfg_any.mcmc.adapt_frequency) == 0:
-            pmove_value = float(host_stats.pmove)
+        if (i + 1) % adapt_frequency == 0:
+            pmove_value = _to_host_scalar(stats.pmove)
             width, pmoves = mcmc.update_mcmc_width(
                 i + 1,
                 width,
-                int(cfg_any.mcmc.adapt_frequency),
+                adapt_frequency,
                 pmove_value,
                 pmoves,
                 pmove_max=cfg_any.mcmc.get("pmove_max", 0.55),
