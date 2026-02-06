@@ -87,10 +87,7 @@ def make_kfac_optimizer(
     val_and_grad = jax.value_and_grad(loss_fn, argnums=0, has_aux=True)
 
     kfac_cfg = cfg_any.optim.kfac
-    lr_cfg = cfg_any.optim.lr
-
-    def learning_rate_schedule(t: jnp.ndarray) -> jnp.ndarray:
-        return lr_cfg.rate * jnp.power((1.0 / (1.0 + (t / lr_cfg.delay))), lr_cfg.decay)
+    learning_rate_schedule = make_schedule(cfg)
 
     optimizer = kfac_jax.Optimizer(
         value_and_grad_func=val_and_grad,
@@ -120,7 +117,9 @@ def make_kfac_optimizer(
         step: jnp.ndarray,
     ) -> tuple[Any, Any, Any, Any, Mapping[str, Any]]:
         del step
-        shared_mom = kfac_jax.utils.replicate_all_local_devices(jnp.zeros([]))
+        shared_mom = kfac_jax.utils.replicate_all_local_devices(
+            jnp.asarray(kfac_cfg.momentum)
+        )
         shared_damping = kfac_jax.utils.replicate_all_local_devices(
             jnp.asarray(kfac_cfg.damping)
         )
@@ -141,6 +140,7 @@ def make_kfac_optimizer(
 
 def make_adam_optimizer(
     cfg: ml_collections.ConfigDict,
+    loss_fn: Callable[[ParamTree, jax.Array, types.FermiNetData], tuple[Array, Any]],
 ) -> tuple[Callable[..., Any], Callable[..., Any]]:
     """Create Adam optimizer init and update functions."""
     cfg_any = cast(Any, cfg)
@@ -161,10 +161,8 @@ def make_adam_optimizer(
         key: jax.Array,
         data: types.FermiNetData,
         step: jnp.ndarray,
-        loss_fn: Callable[
-            [ParamTree, jax.Array, types.FermiNetData], tuple[Array, Any]
-        ],
     ) -> tuple[Any, Any, Any, Any, Mapping[str, Any]]:
+        del step
         (loss_value, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(
             params, key, data
         )
@@ -187,5 +185,5 @@ def make_optimizer(
     cfg_any = cast(Any, cfg)
     if cfg_any.optim.optimizer == "kfac":
         return make_kfac_optimizer(cfg, loss_fn)
-    init_fn, update_fn = make_adam_optimizer(cfg)
+    init_fn, update_fn = make_adam_optimizer(cfg, loss_fn)
     return None, init_fn, update_fn

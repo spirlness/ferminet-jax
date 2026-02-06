@@ -10,6 +10,7 @@ import jax.numpy as jnp
 from jax import lax
 
 from ferminet.types import FermiNetData, LogFermiNetLike, ParamTree
+from ferminet.utils.numerics import EPS
 
 MCMCState: TypeAlias = tuple[FermiNetData, jax.Array, jnp.ndarray, jnp.ndarray]
 T = TypeVar("T")
@@ -50,8 +51,11 @@ def _harmonic_mean(x: jnp.ndarray, atoms: jnp.ndarray) -> jnp.ndarray:
         Harmonic mean distances (batch, nelec, 1, 1).
     """
     ae: jnp.ndarray = x - atoms[None, ...]
-    r_ae = cast(jnp.ndarray, jnp.linalg.norm(ae, axis=-1, keepdims=True))
-    return 1.0 / jnp.mean(1.0 / r_ae, axis=-2, keepdims=True)
+    r_ae = cast(
+        jnp.ndarray,
+        jnp.sqrt(jnp.sum(jnp.square(ae), axis=-1, keepdims=True) + EPS),
+    )
+    return 1.0 / jnp.mean(1.0 / (r_ae + EPS), axis=-2, keepdims=True)
 
 
 def mh_accept(

@@ -81,9 +81,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     params = device_utils.replicate_tree(params, devices)
     key = kfac_jax.utils.make_different_rng_key_on_all_devices(key)
 
-    kfac_optimizer, init_opt_state, update_fn = optimizers.make_optimizer(
-        cfg, loss_fn, params
-    )
+    _, init_opt_state, update_fn = optimizers.make_optimizer(cfg, loss_fn, params)
     if cfg_any.optim.optimizer == "kfac":
         key, init_keys = _p_split(key)
         opt_state = init_opt_state(params, init_keys, data)
@@ -108,10 +106,6 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
     if cfg_any.optim.optimizer == "kfac":
         pmapped_mcmc_step = constants.pmap(mcmc_step, donate_argnums=1)
-        shared_mom = kfac_jax.utils.replicate_all_local_devices(jnp.zeros([]))
-        shared_damping = kfac_jax.utils.replicate_all_local_devices(
-            jnp.asarray(cfg_any.optim.kfac.damping)
-        )
 
         def kfac_step_fn(
             params: ParamTree,
@@ -124,16 +118,13 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             mcmc_keys, loss_keys = _p_split(key)
             new_data, pmove = pmapped_mcmc_step(params, data, mcmc_keys, mcmc_width)
 
-            new_params, new_opt_state, stats = kfac_optimizer.step(
-                params=params,
-                state=opt_state,
-                rng=loss_keys,
-                batch=new_data,
-                momentum=shared_mom,
-                damping=shared_damping,
+            new_params, new_opt_state, loss_value, aux, _ = update_fn(
+                params,
+                opt_state,
+                loss_keys,
+                new_data,
+                step,
             )
-            loss_value = stats.get("loss", jnp.asarray(0.0))
-            aux = stats.get("aux", None)
 
             energy = loss_value[0] if hasattr(loss_value, "__getitem__") else loss_value
             variance = (
@@ -152,15 +143,6 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         step_fn = kfac_step_fn
     else:
 
-        def _loss_with_kfac(
-            p: ParamTree,
-            k: jax.Array,
-            d: types.FermiNetData,
-        ) -> tuple[Array, Any]:
-            if cfg_any.optim.optimizer == "kfac":
-                optimizers.register_kfac_dense(p, d.positions)
-            return loss_fn(p, k, d)
-
         @jax.jit
         @constants.pmap
         def adam_step_fn(
@@ -175,7 +157,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             new_data, pmove = mcmc_step(params, data, mcmc_key, mcmc_width)
 
             new_params, new_opt_state, loss_value, aux, _ = update_fn(
-                params, opt_state, loss_key, new_data, step, _loss_with_kfac
+                params, opt_state, loss_key, new_data, step
             )
 
             energy = constants.pmean(loss_value)

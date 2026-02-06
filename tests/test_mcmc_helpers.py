@@ -13,6 +13,13 @@ def test_harmonic_mean_matches_manual_computation():
     assert jnp.allclose(result, expected)
 
 
+def test_harmonic_mean_is_finite_at_zero_distance():
+    atoms = jnp.array([[0.0, 0.0, 0.0]])
+    x = jnp.zeros((1, 2, 1, 3))
+    result = mcmc._harmonic_mean(x, atoms)
+    assert jnp.all(jnp.isfinite(result))
+
+
 def test_mh_accept_rejects_non_finite_proposals():
     x1 = jnp.zeros((2, 2))
     x2 = jnp.ones((2, 2))
