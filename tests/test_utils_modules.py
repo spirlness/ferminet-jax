@@ -1,4 +1,5 @@
 import jax.numpy as jnp
+import pytest
 
 from ferminet.utils import statistics, system
 
@@ -21,6 +22,14 @@ def test_statistics_helpers():
     mean_block, stderr_block = statistics.block_average(data, block_size=2)
     assert jnp.isclose(mean_block, jnp.mean(data))
     assert stderr_block >= 0
+
+
+def test_block_average_rejects_invalid_block_sizes():
+    data = jnp.arange(4.0)
+    with pytest.raises(ValueError):
+        statistics.block_average(data, block_size=0)
+    with pytest.raises(ValueError):
+        statistics.block_average(data, block_size=5)
 
 
 def test_system_helpers():
