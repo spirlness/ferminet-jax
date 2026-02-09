@@ -13,10 +13,10 @@ class FermiNetData(NamedTuple):
     """Data passed to network.
 
     Attributes:
-        positions: walker positions, shape (nelectrons*ndim).
-        spins: spins of each walker, shape (nelectrons).
-        atoms: atomic positions, shape (natoms*ndim).
-        charges: atomic charges, shape (natoms).
+        positions: walker positions, shape (n_electrons * ndim).
+        spins: spins of each walker, shape (n_electrons).
+        atoms: atomic positions, shape (n_atoms * ndim).
+        charges: atomic charges, shape (n_atoms).
     """
 
     positions: jnp.ndarray

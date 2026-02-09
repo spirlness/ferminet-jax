@@ -32,6 +32,11 @@ def welford_finalize(count: int, m2: jnp.ndarray) -> jnp.ndarray:
 def block_average(
     data: jnp.ndarray, block_size: int
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
+    if block_size <= 0:
+        raise ValueError("block_size must be a positive integer.")
+    if len(data) < block_size:
+        raise ValueError("block_size cannot exceed the number of samples.")
+
     n_blocks = len(data) // block_size
     trimmed = data[: n_blocks * block_size]
     blocks = trimmed.reshape(n_blocks, block_size)
