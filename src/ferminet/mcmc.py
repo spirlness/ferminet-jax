@@ -29,8 +29,6 @@ def _fori_loop(
     return fori_loop(lower, upper, body_fun, init_val)
 
 
-
-
 def _asarray_data(
     data: FermiNetData,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
