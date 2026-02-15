@@ -568,6 +568,8 @@ def make_fermi_net(
 
         return cast(ParamTree, params)
 
+    mask = _electron_electron_mask(n_electrons)
+
     def _forward_single(
         params: ParamMapping,
         electrons_single: Array,
@@ -587,7 +589,6 @@ def make_fermi_net(
         h_one = _construct_one_electron_features(r_ae, r_ae_norm)
         h_one = _augment_one_electron_features(h_one, r_ae_norm, spins_in, charges_in)
         h_two = _construct_two_electron_features(r_ee, r_ee_norm, spins_in)
-        mask = _electron_electron_mask(n_electrons)
 
         layers = cast(Sequence[Mapping[str, Mapping[str, Array]]], params_map["layers"])
         for layer_index, layer_params in enumerate(layers):
