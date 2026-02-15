@@ -29,9 +29,6 @@ def _fori_loop(
     return fori_loop(lower, upper, body_fun, init_val)
 
 
-def _split_key(key: jax.Array) -> tuple[jax.Array, jax.Array]:
-    keys = jax.random.split(key)
-    return keys[0], keys[1]
 
 
 def _asarray_data(
@@ -64,18 +61,17 @@ def mh_accept(
     lp_1: jnp.ndarray,
     lp_2: jnp.ndarray,
     ratio: jnp.ndarray,
-    key: jax.Array,
+    subkey: jax.Array,
     num_accepts: jnp.ndarray,
-) -> tuple[jnp.ndarray, jax.Array, jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Metropolis-Hastings accept/reject step with non-finite guards."""
-    key, subkey = _split_key(key)
     rnd = jnp.log(jax.random.uniform(subkey, shape=ratio.shape))
     finite_proposal = jnp.isfinite(lp_2) & jnp.isfinite(ratio)
     cond = (ratio > rnd) & finite_proposal
     x_new = jnp.where(cond[..., None], x2, x1)
     lp_new = jnp.where(cond, lp_2, lp_1)
     num_accepts += jnp.sum(cond)
-    return x_new, key, lp_new, num_accepts
+    return x_new, lp_new, num_accepts
 
 
 def mh_update(
@@ -105,7 +101,7 @@ def mh_update(
     Returns:
         (new_data, key, lp_new, num_accepts)
     """
-    key, subkey = _split_key(key)
+    key, subkey, subkey_accept = jax.random.split(key, num=3)
     positions, spins, atoms_data, charges = _asarray_data(data)
     x1: jnp.ndarray = positions
 
@@ -135,8 +131,8 @@ def mh_update(
         x1 = jnp.reshape(x1, [n, -1])
         x2 = x2_flat
 
-    x_new, key, lp_new, num_accepts = mh_accept(
-        x1, x2, lp_1, lp_2, ratio, key, num_accepts
+    x_new, lp_new, num_accepts = mh_accept(
+        x1, x2, lp_1, lp_2, ratio, subkey_accept, num_accepts
     )
 
     # Update data with new positions
