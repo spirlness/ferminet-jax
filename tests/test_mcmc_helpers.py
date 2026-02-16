@@ -29,7 +29,7 @@ def test_mh_accept_rejects_non_finite_proposals():
     key = jax.random.PRNGKey(0)
     num_accepts = jnp.array(0.0)
 
-    new_positions, _, new_lp, accepts = mcmc.mh_accept(
+    new_positions, new_lp, accepts = mcmc.mh_accept(
         x1, x2, lp1, lp2, ratio, key, num_accepts
     )
 
