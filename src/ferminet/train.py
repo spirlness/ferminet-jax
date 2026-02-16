@@ -200,7 +200,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 lambda p, np: jnp.where(is_finite_global, np, p), params, new_params
             )
             final_opt_state = jax.tree_util.tree_map(
-                lambda s, ns: jnp.where(is_finite_global, ns, s), opt_state, new_opt_state
+                lambda s, ns: jnp.where(is_finite_global, ns, s),
+                opt_state,
+                new_opt_state,
             )
 
             energy = constants.pmean(loss_value)
