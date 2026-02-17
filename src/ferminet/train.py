@@ -56,6 +56,13 @@ def _to_host_scalar(value: Any) -> float:
     return float(host)
 
 
+def _convert_to_float(value: Any) -> float:
+    """Convert a numpy array or scalar to a Python float."""
+    if hasattr(value, "ndim") and value.ndim > 0:
+        return float(value.ravel()[0])
+    return float(value)
+
+
 def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     """Run VMC training with KFAC or Adam optimizer."""
     cfg = base_config.resolve(cfg)
