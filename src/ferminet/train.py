@@ -227,20 +227,22 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         params, opt_state = new_params, new_opt_state
 
         if (i + 1) % print_every == 0:
-            # Transfer all stats to host at once.
-            stats_cpu = jax.device_get(stats)
-            energy_val = _convert_to_float(stats_cpu.energy)
-            variance_val = _convert_to_float(stats_cpu.variance)
-            pmove_val = _convert_to_float(stats_cpu.pmove)
-            lr_val = _convert_to_float(stats_cpu.learning_rate)
+            stats_host = jax.device_get(stats)
+
+            def _to_float(arr):
+                if arr.ndim > 0:
+                    return float(arr.ravel()[0])
+                return float(arr)
+
+            energy_val = _to_float(stats_host.energy)
 
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
                     energy=energy_val,
-                    variance=variance_val,
-                    pmove=pmove_val,
-                    learning_rate=lr_val,
+                    variance=_to_float(stats_host.variance),
+                    pmove=_to_float(stats_host.pmove),
+                    learning_rate=_to_float(stats_host.learning_rate),
                 )
                 wall = time.time() - start
                 train_utils.log_stats(i + 1, log_stats, wall, width)
@@ -249,9 +251,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
             log_stats = train_utils.StepStats(
                 energy=energy_val,
-                variance=variance_val,
-                pmove=pmove_val,
-                learning_rate=lr_val,
+                variance=_to_float(stats_host.variance),
+                pmove=_to_float(stats_host.pmove),
+                learning_rate=_to_float(stats_host.learning_rate),
             )
             wall = time.time() - start
             train_utils.log_stats(i + 1, log_stats, wall, width)

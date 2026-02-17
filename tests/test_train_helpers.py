@@ -223,13 +223,10 @@ def test_train_loop_with_stubbed_dependencies(monkeypatch, tmp_path):
     monkeypatch.setattr(train.jax, "pmap", lambda fn: fn, raising=False)
 
     def fake_device_get(x):
-        def _get(leaf):
-            arr = jnp.asarray(leaf)
-            if arr.ndim == 0:
-                arr = arr[None]
-            return arr
-
-        return jax.tree_util.tree_map(_get, x)
+        return jax.tree_util.tree_map(
+            lambda leaf: jnp.asarray(leaf)[None] if jnp.ndim(leaf) == 0 else jnp.asarray(leaf),
+            x
+        )
 
     monkeypatch.setattr(train.jax, "device_get", fake_device_get, raising=False)
     monkeypatch.setattr(
