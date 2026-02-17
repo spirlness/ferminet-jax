@@ -127,6 +127,10 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             mcmc_keys, loss_keys = _p_split(key)
             new_data, pmove = pmapped_mcmc_step(params, data, mcmc_keys, mcmc_width)
 
+            # Copy params and opt_state because update_fn (KFAC) donates them.
+            params_old = jax.tree_util.tree_map(lambda x: x.copy(), params)
+            opt_state_old = jax.tree_util.tree_map(lambda x: x.copy(), opt_state)
+
             new_params, new_opt_state, loss_value, aux, _ = update_fn(
                 params,
                 opt_state,
@@ -147,6 +151,15 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             step_stats = train_utils.StepStats(
                 energy=energy, variance=variance, pmove=pmove_val, learning_rate=lr
             )
+
+            is_finite = jnp.isfinite(energy)
+            new_params = jax.tree_util.tree_map(
+                lambda p, np: jnp.where(is_finite, np, p), params_old, new_params
+            )
+            new_opt_state = jax.tree_util.tree_map(
+                lambda p, np: jnp.where(is_finite, np, p), opt_state_old, new_opt_state
+            )
+
             return new_params, new_opt_state, new_data, loss_keys, step_stats
 
         step_fn = kfac_step_fn
@@ -176,6 +189,15 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             stats = train_utils.StepStats(
                 energy=energy, variance=variance, pmove=pmove, learning_rate=lr
             )
+
+            is_finite = jnp.isfinite(energy)
+            new_params = jax.tree_util.tree_map(
+                lambda p, np: jnp.where(is_finite, np, p), params, new_params
+            )
+            new_opt_state = jax.tree_util.tree_map(
+                lambda p, np: jnp.where(is_finite, np, p), opt_state, new_opt_state
+            )
+
             return new_params, new_opt_state, new_data, key, stats
 
         step_fn = adam_step_fn
@@ -195,10 +217,12 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         step_result = cast(tuple[Any, Any, Any, Any, Any], step_result)
         new_params, new_opt_state, data, key, stats = step_result
 
-        energy_val = _to_host_scalar(stats.energy)
-        if not jnp.isfinite(energy_val):
-            width = float(cfg_any.mcmc.move_width)
-            if (i + 1) % print_every == 0:
+        params, opt_state = new_params, new_opt_state
+
+        if (i + 1) % print_every == 0:
+            energy_val = _to_host_scalar(stats.energy)
+            if not jnp.isfinite(energy_val):
+                width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
                     energy=energy_val,
                     variance=_to_host_scalar(stats.variance),
@@ -208,11 +232,8 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 wall = time.time() - start
                 train_utils.log_stats(i + 1, log_stats, wall, width)
                 start = time.time()
-            continue
+                continue
 
-        params, opt_state = new_params, new_opt_state
-
-        if (i + 1) % print_every == 0:
             log_stats = train_utils.StepStats(
                 energy=energy_val,
                 variance=_to_host_scalar(stats.variance),
