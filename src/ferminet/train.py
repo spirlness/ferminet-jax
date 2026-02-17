@@ -47,13 +47,17 @@ def _filter_kwargs(fn: Any, kwargs: Mapping[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in kwargs.items() if k in params}
 
 
-def _to_host_scalar(value: Any) -> float:
-    """Convert a scalar-like value to a Python float with minimal transfer."""
-    arr = jnp.asarray(value)
-    host = jnp.asarray(jax.device_get(arr))
-    if host.ndim > 0:
-        host = jnp.reshape(host, (-1,))[0]
-    return float(host)
+def _to_host(tree: Any) -> Any:
+    """Convert a PyTree of device arrays to a PyTree of host scalars."""
+    host_tree = jax.device_get(tree)
+
+    def _to_scalar(x: Any) -> float:
+        x = jnp.asarray(x)
+        if x.ndim > 0:
+            x = jnp.reshape(x, (-1,))[0]
+        return float(x)
+
+    return jax.tree_util.tree_map(_to_scalar, host_tree)
 
 
 def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
@@ -220,32 +224,21 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         params, opt_state = new_params, new_opt_state
 
         if (i + 1) % print_every == 0:
-            energy_val = _to_host_scalar(stats.energy)
+            log_stats = _to_host(stats)
+            energy_val = log_stats.energy
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
-                log_stats = train_utils.StepStats(
-                    energy=energy_val,
-                    variance=_to_host_scalar(stats.variance),
-                    pmove=_to_host_scalar(stats.pmove),
-                    learning_rate=_to_host_scalar(stats.learning_rate),
-                )
                 wall = time.time() - start
                 train_utils.log_stats(i + 1, log_stats, wall, width)
                 start = time.time()
                 continue
 
-            log_stats = train_utils.StepStats(
-                energy=energy_val,
-                variance=_to_host_scalar(stats.variance),
-                pmove=_to_host_scalar(stats.pmove),
-                learning_rate=_to_host_scalar(stats.learning_rate),
-            )
             wall = time.time() - start
             train_utils.log_stats(i + 1, log_stats, wall, width)
             start = time.time()
 
         if (i + 1) % adapt_frequency == 0:
-            pmove_value = _to_host_scalar(stats.pmove)
+            pmove_value = _to_host(stats.pmove)
             width, pmoves = mcmc.update_mcmc_width(
                 i + 1,
                 width,
