@@ -56,17 +56,11 @@ def _to_host_scalar(value: Any) -> float:
     return float(host)
 
 
-def _to_host_scalars(values: Any) -> list[float]:
-    """Convert a sequence of scalar-like values to Python floats with minimal transfer."""
-    arrs = [jnp.asarray(v) for v in values]
-    hosts = jax.device_get(arrs)
-    results = []
-    for host in hosts:
-        host = jnp.asarray(host)
-        if host.ndim > 0:
-            host = jnp.reshape(host, (-1,))[0]
-        results.append(float(host))
-    return results
+def _convert_to_float(value: Any) -> float:
+    """Convert a numpy array or scalar to a Python float."""
+    if hasattr(value, "ndim") and value.ndim > 0:
+        return float(value.ravel()[0])
+    return float(value)
 
 
 def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
@@ -233,16 +227,22 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         params, opt_state = new_params, new_opt_state
 
         if (i + 1) % print_every == 0:
-            energy_val, variance_val, pmove_val, lr_val = _to_host_scalars(
-                [stats.energy, stats.variance, stats.pmove, stats.learning_rate]
-            )
+            stats_host = jax.device_get(stats)
+
+            def _to_float(arr):
+                if arr.ndim > 0:
+                    return float(arr.ravel()[0])
+                return float(arr)
+
+            energy_val = _to_float(stats_host.energy)
+
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
                     energy=energy_val,
-                    variance=variance_val,
-                    pmove=pmove_val,
-                    learning_rate=lr_val,
+                    variance=_to_float(stats_host.variance),
+                    pmove=_to_float(stats_host.pmove),
+                    learning_rate=_to_float(stats_host.learning_rate),
                 )
                 wall = time.time() - start
                 train_utils.log_stats(i + 1, log_stats, wall, width)
@@ -251,9 +251,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
             log_stats = train_utils.StepStats(
                 energy=energy_val,
-                variance=variance_val,
-                pmove=pmove_val,
-                learning_rate=lr_val,
+                variance=_to_float(stats_host.variance),
+                pmove=_to_float(stats_host.pmove),
+                learning_rate=_to_float(stats_host.learning_rate),
             )
             wall = time.time() - start
             train_utils.log_stats(i + 1, log_stats, wall, width)
