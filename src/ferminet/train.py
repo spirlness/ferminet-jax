@@ -8,14 +8,14 @@ from __future__ import annotations
 import functools
 import inspect
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
-from jax import lax
 import kfac_jax
 import ml_collections
+from jax import lax
 
 from ferminet import (
     base_config,
