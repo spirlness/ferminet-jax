@@ -56,6 +56,13 @@ def _to_host_scalar(value: Any) -> float:
     return float(host)
 
 
+def _convert_to_float(value: Any) -> float:
+    """Convert a numpy array or scalar to a Python float."""
+    if hasattr(value, "ndim") and value.ndim > 0:
+        return float(value.ravel()[0])
+    return float(value)
+
+
 def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     """Run VMC training with KFAC or Adam optimizer."""
     cfg = base_config.resolve(cfg)
@@ -220,14 +227,20 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         params, opt_state = new_params, new_opt_state
 
         if (i + 1) % print_every == 0:
-            energy_val = _to_host_scalar(stats.energy)
+            # Transfer all stats to host at once.
+            stats_cpu = jax.device_get(stats)
+            energy_val = _convert_to_float(stats_cpu.energy)
+            variance_val = _convert_to_float(stats_cpu.variance)
+            pmove_val = _convert_to_float(stats_cpu.pmove)
+            lr_val = _convert_to_float(stats_cpu.learning_rate)
+
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
                     energy=energy_val,
-                    variance=_to_host_scalar(stats.variance),
-                    pmove=_to_host_scalar(stats.pmove),
-                    learning_rate=_to_host_scalar(stats.learning_rate),
+                    variance=variance_val,
+                    pmove=pmove_val,
+                    learning_rate=lr_val,
                 )
                 wall = time.time() - start
                 train_utils.log_stats(i + 1, log_stats, wall, width)
@@ -236,9 +249,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
             log_stats = train_utils.StepStats(
                 energy=energy_val,
-                variance=_to_host_scalar(stats.variance),
-                pmove=_to_host_scalar(stats.pmove),
-                learning_rate=_to_host_scalar(stats.learning_rate),
+                variance=variance_val,
+                pmove=pmove_val,
+                learning_rate=lr_val,
             )
             wall = time.time() - start
             train_utils.log_stats(i + 1, log_stats, wall, width)
