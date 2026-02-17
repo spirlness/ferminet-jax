@@ -226,8 +226,10 @@ def test_train_loop_with_stubbed_dependencies(monkeypatch, tmp_path):
 
     def fake_device_get(x):
         return jax.tree_util.tree_map(
-            lambda leaf: jnp.asarray(leaf)[None] if jnp.ndim(leaf) == 0 else jnp.asarray(leaf),
-            x
+            lambda leaf: (
+                jnp.asarray(leaf)[None] if jnp.ndim(leaf) == 0 else jnp.asarray(leaf)
+            ),
+            x,
         )
 
     monkeypatch.setattr(train.jax, "device_get", fake_device_get, raising=False)
