@@ -221,6 +221,9 @@ def test_train_loop_with_stubbed_dependencies(monkeypatch, tmp_path):
 
     monkeypatch.setattr(train.constants, "pmean", fake_pmean, raising=False)
     monkeypatch.setattr(train.jax, "pmap", lambda fn: fn, raising=False)
+    monkeypatch.setattr(
+        train.jax.lax, "pmin", lambda x, axis_name: x, raising=False
+    )
 
     def fake_device_get(x):
         arr = jnp.asarray(x)

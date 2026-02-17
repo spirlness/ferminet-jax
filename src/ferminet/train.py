@@ -127,12 +127,30 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             mcmc_keys, loss_keys = _p_split(key)
             new_data, pmove = pmapped_mcmc_step(params, data, mcmc_keys, mcmc_width)
 
+            # We need to copy params and opt_state because update_fn may donate them.
+            # If the step is invalid (NaN energy), we want to return the original values.
+            # Explicit copy ensures we have valid buffers for fallback.
+            params_copy = jax.tree_util.tree_map(lambda x: x.copy(), params)
+            opt_state_copy = jax.tree_util.tree_map(lambda x: x.copy(), opt_state)
+
             new_params, new_opt_state, loss_value, aux, _ = update_fn(
                 params,
                 opt_state,
                 loss_keys,
                 new_data,
                 step,
+            )
+
+            # Check for NaNs/Infs in loss/energy.
+            # loss_value might be sharded or replicated. We check all.
+            is_finite = jnp.all(jnp.isfinite(loss_value))
+
+            # Conditionally update params and opt_state
+            final_params = jax.tree_util.tree_map(
+                lambda p, np: jnp.where(is_finite, np, p), params_copy, new_params
+            )
+            final_opt_state = jax.tree_util.tree_map(
+                lambda s, ns: jnp.where(is_finite, ns, s), opt_state_copy, new_opt_state
             )
 
             energy = loss_value[0] if hasattr(loss_value, "__getitem__") else loss_value
@@ -147,7 +165,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             step_stats = train_utils.StepStats(
                 energy=energy, variance=variance, pmove=pmove_val, learning_rate=lr
             )
-            return new_params, new_opt_state, new_data, loss_keys, step_stats
+            return final_params, final_opt_state, new_data, loss_keys, step_stats
 
         step_fn = kfac_step_fn
     else:
@@ -169,6 +187,24 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 params, opt_state, loss_key, new_data, step
             )
 
+            # Check if loss is finite on this device
+            is_finite_local = jnp.isfinite(loss_value)
+            # Ensure all devices agree (if one fails, all should reject to keep sync)
+            is_finite_global = jax.lax.pmin(
+                is_finite_local, axis_name=constants.PMAP_AXIS_NAME
+            )
+
+            # Conditionally update params and opt_state
+            # JIT compiler handles buffer reuse safely here.
+            final_params = jax.tree_util.tree_map(
+                lambda p, np: jnp.where(is_finite_global, np, p), params, new_params
+            )
+            final_opt_state = jax.tree_util.tree_map(
+                lambda s, ns: jnp.where(is_finite_global, ns, s),
+                opt_state,
+                new_opt_state,
+            )
+
             energy = constants.pmean(loss_value)
             variance = constants.pmean(aux.variance)
             pmove = constants.pmean(pmove)
@@ -176,7 +212,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             stats = train_utils.StepStats(
                 energy=energy, variance=variance, pmove=pmove, learning_rate=lr
             )
-            return new_params, new_opt_state, new_data, key, stats
+            return final_params, final_opt_state, new_data, key, stats
 
         step_fn = adam_step_fn
 
@@ -195,24 +231,13 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         step_result = cast(tuple[Any, Any, Any, Any, Any], step_result)
         new_params, new_opt_state, data, key, stats = step_result
 
-        energy_val = _to_host_scalar(stats.energy)
-        if not jnp.isfinite(energy_val):
-            width = float(cfg_any.mcmc.move_width)
-            if (i + 1) % print_every == 0:
-                log_stats = train_utils.StepStats(
-                    energy=energy_val,
-                    variance=_to_host_scalar(stats.variance),
-                    pmove=_to_host_scalar(stats.pmove),
-                    learning_rate=_to_host_scalar(stats.learning_rate),
-                )
-                wall = time.time() - start
-                train_utils.log_stats(i + 1, log_stats, wall, width)
-                start = time.time()
-            continue
-
+        # params and opt_state are now updated conditionally inside step_fn
+        # so we can always update the python variables.
         params, opt_state = new_params, new_opt_state
 
         if (i + 1) % print_every == 0:
+            energy_val = _to_host_scalar(stats.energy)
+            # Log stats regardless of validity (if not finite, log_stats will show it)
             log_stats = train_utils.StepStats(
                 energy=energy_val,
                 variance=_to_host_scalar(stats.variance),
