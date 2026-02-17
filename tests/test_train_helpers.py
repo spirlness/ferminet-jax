@@ -220,7 +220,9 @@ def test_train_loop_with_stubbed_dependencies(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr(train.constants, "pmean", fake_pmean, raising=False)
-    monkeypatch.setattr(train.jax, "pmap", lambda fn: fn, raising=False)
+    monkeypatch.setattr(train.jax, "pmap", lambda fn, *a, **k: fn, raising=False)
+    monkeypatch.setattr(train.lax, "pmean", lambda x, *a, **k: x, raising=False)
+    monkeypatch.setattr(train.lax, "pmin", lambda x, *a, **k: x, raising=False)
 
     def fake_device_get(x):
         return jax.tree_util.tree_map(

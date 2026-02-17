@@ -223,3 +223,25 @@ def update_mcmc_width(
     width = float(jnp.clip(jnp.exp(log_width), width_min, width_max))
 
     return width, pmoves
+
+
+def update_mcmc_width_jax(
+    t: int,
+    width: jnp.ndarray,
+    adapt_frequency: int,
+    pmove: jnp.ndarray,
+    pmove_max: float = 0.55,
+    pmove_min: float = 0.5,
+    width_min: float = 0.001,
+    width_max: float = 10.0,
+) -> jnp.ndarray:
+    """Adapts MCMC step width based on acceptance rate (JAX version)."""
+    target = (pmove_max + pmove_min) / 2.0
+    eta = 0.5
+    max_log_change = 0.4
+
+    log_width = jnp.log(width)
+    delta = jnp.clip(eta * (pmove - target), -max_log_change, max_log_change)
+    log_width = log_width + delta
+    width = jnp.exp(log_width)
+    return jnp.clip(width, width_min, width_max)
