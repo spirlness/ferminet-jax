@@ -569,6 +569,8 @@ def make_fermi_net(
 
         return cast(ParamTree, params)
 
+    mask = _electron_electron_mask(n_electrons)
+
     def _forward_single(
         params: ParamMapping,
         electrons_single: Array,
