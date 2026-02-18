@@ -222,7 +222,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     start = time.time()
     # Helper to fetch only the first device's data (slice 0) to host.
     # Slicing on device avoids transferring full replicated arrays.
-    get_first_device = lambda t: jax.device_get(jax.tree_util.tree_map(lambda x: x[0], t))
+
+    def get_first_device(t):
+        return jax.device_get(jax.tree_util.tree_map(lambda x: x[0], t))
 
     for i in range(step, iterations):
         width_array = jnp.full((device_count,), width)
