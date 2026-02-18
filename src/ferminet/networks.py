@@ -571,7 +571,7 @@ def make_fermi_net(
 
     # Precompute same-spin mask assuming fixed spin order (up, down)
     spin_labels_fixed = jnp.concatenate([jnp.ones(n_up), -jnp.ones(n_down)])
-    same_spin_mask = (spin_labels_fixed[:, None] == spin_labels_fixed[None, :])
+    same_spin_mask = spin_labels_fixed[:, None] == spin_labels_fixed[None, :]
 
     def _forward_single(
         params: ParamMapping,
