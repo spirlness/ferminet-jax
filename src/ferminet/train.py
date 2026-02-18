@@ -220,6 +220,12 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     save_path = cfg_any.log.save_path
 
     start = time.time()
+    # Helper to fetch only the first device's data (slice 0) to host.
+    # Slicing on device avoids transferring full replicated arrays.
+
+    def get_first_device(t):
+        return jax.device_get(jax.tree_util.tree_map(lambda x: x[0], t))
+
     for i in range(step, iterations):
         width_array = jnp.full((device_count,), width)
         step_array = jnp.full((device_count,), i, dtype=jnp.int32)
@@ -231,22 +237,17 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         params, opt_state = new_params, new_opt_state
 
         if (i + 1) % print_every == 0:
-            stats_host = jax.device_get(stats)
+            stats_host = get_first_device(stats)
 
-            def _to_float(arr):
-                if arr.ndim > 0:
-                    return float(arr.ravel()[0])
-                return float(arr)
-
-            energy_val = _to_float(stats_host.energy)
+            energy_val = stats_host.energy
 
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
                     energy=energy_val,
-                    variance=_to_float(stats_host.variance),
-                    pmove=_to_float(stats_host.pmove),
-                    learning_rate=_to_float(stats_host.learning_rate),
+                    variance=stats_host.variance,
+                    pmove=stats_host.pmove,
+                    learning_rate=stats_host.learning_rate,
                 )
                 wall = time.time() - start
                 train_utils.log_stats(i + 1, log_stats, wall, width)
@@ -255,9 +256,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
             log_stats = train_utils.StepStats(
                 energy=energy_val,
-                variance=_to_float(stats_host.variance),
-                pmove=_to_float(stats_host.pmove),
-                learning_rate=_to_float(stats_host.learning_rate),
+                variance=stats_host.variance,
+                pmove=stats_host.pmove,
+                learning_rate=stats_host.learning_rate,
             )
             wall = time.time() - start
             train_utils.log_stats(i + 1, log_stats, wall, width)
@@ -276,18 +277,16 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             )
 
         if (i + 1) % checkpoint_every == 0:
-            host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
-            host_opt_state = jax.tree_util.tree_map(
-                lambda x: jax.device_get(x)[0], opt_state
-            )
-            host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
+            host_params = get_first_device(params)
+            host_opt_state = get_first_device(opt_state)
+            host_data = get_first_device(data)
             checkpoint.save_checkpoint(
                 save_path, i + 1, host_params, host_opt_state, host_data
             )
 
-    host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
-    host_opt_state = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], opt_state)
-    host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
+    host_params = get_first_device(params)
+    host_opt_state = get_first_device(opt_state)
+    host_data = get_first_device(data)
     return {
         "params": host_params,
         "opt_state": host_opt_state,
