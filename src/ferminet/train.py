@@ -159,7 +159,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             pmove_val = pmove[0] if hasattr(pmove, "__getitem__") else pmove
             step_val = step[0] if hasattr(step, "__getitem__") else step
             lr = jnp.asarray(schedule(step_val))
-            step_stats = train_utils.StepStats(
+            step_stats = train_utils.StepStats.from_scalars(
                 energy=energy, variance=variance, pmove=pmove_val, learning_rate=lr
             )
 
@@ -197,7 +197,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             variance = constants.pmean(aux.variance)
             pmove = constants.pmean(pmove)
             lr = jnp.asarray(schedule(step))
-            stats = train_utils.StepStats(
+            stats = train_utils.StepStats.from_scalars(
                 energy=energy, variance=variance, pmove=pmove, learning_rate=lr
             )
 
@@ -242,7 +242,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
-                log_stats = train_utils.StepStats(
+                log_stats = train_utils.StepStats.from_scalars(
                     energy=energy_val,
                     variance=_to_float(stats_host.variance),
                     pmove=_to_float(stats_host.pmove),
@@ -253,7 +253,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 start = time.time()
                 continue
 
-            log_stats = train_utils.StepStats(
+            log_stats = train_utils.StepStats.from_scalars(
                 energy=energy_val,
                 variance=_to_float(stats_host.variance),
                 pmove=_to_float(stats_host.pmove),
