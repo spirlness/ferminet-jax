@@ -22,10 +22,32 @@ ParamTree = types.ParamTree
 class StepStats:
     """Statistics for a single training step."""
 
-    energy: Array
-    variance: Array
-    pmove: Array
-    learning_rate: Array
+    values: Array
+
+    @classmethod
+    def from_scalars(
+        cls, energy: Array, variance: Array, pmove: Array, learning_rate: Array
+    ) -> "StepStats":
+        """Create StepStats from scalars."""
+        # Use jax.numpy to ensure we can handle both JAX arrays and numpy scalars
+        # in a way compatible with JAX transformations.
+        return cls(values=jnp.stack([energy, variance, pmove, learning_rate], axis=-1))
+
+    @property
+    def energy(self) -> Array:
+        return self.values[..., 0]
+
+    @property
+    def variance(self) -> Array:
+        return self.values[..., 1]
+
+    @property
+    def pmove(self) -> Array:
+        return self.values[..., 2]
+
+    @property
+    def learning_rate(self) -> Array:
+        return self.values[..., 3]
 
 
 def build_network(
