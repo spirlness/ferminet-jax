@@ -26,6 +26,7 @@ class StepStats:
     variance: Array
     pmove: Array
     learning_rate: Array
+    width: Array
 
 
 def build_network(
@@ -204,28 +205,17 @@ def log_stats(
     width: float | None = None,
 ) -> None:
     """Log training step statistics to console."""
-    if width is not None:
-        print(
-            "Step {:>8d} | E {:>12.6f} | Var {:>10.6f} | pmove {:>6.3f} | "
-            "width {:>6.3f} | lr {:>8.5f} | {:.2f} s".format(
-                step,
-                float(stats.energy),
-                float(stats.variance),
-                float(stats.pmove),
-                width,
-                float(stats.learning_rate),
-                walltime,
-            )
+    if width is None:
+        width = float(stats.width)
+    print(
+        "Step {:>8d} | E {:>12.6f} | Var {:>10.6f} | pmove {:>6.3f} | "
+        "width {:>6.3f} | lr {:>8.5f} | {:.2f} s".format(
+            step,
+            float(stats.energy),
+            float(stats.variance),
+            float(stats.pmove),
+            width,
+            float(stats.learning_rate),
+            walltime,
         )
-    else:
-        print(
-            "Step {:>8d} | E {:>12.6f} | Var {:>10.6f} | pmove {:>6.3f} | "
-            "lr {:>8.5f} | {:.2f} s".format(
-                step,
-                float(stats.energy),
-                float(stats.variance),
-                float(stats.pmove),
-                float(stats.learning_rate),
-                walltime,
-            )
-        )
+    )

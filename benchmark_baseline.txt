@@ -1,0 +1,33 @@
+Using CPython 3.12.12 interpreter at: /home/jules/.pyenv/versions/3.12.12/bin/python3
+Creating virtual environment at: .venv
+   Updating https://github.com/google-deepmind/kfac-jax (HEAD)
+   Building ferminet-jax @ file:///app
+Downloading numpy (15.8MiB)
+Downloading scipy (33.4MiB)
+Downloading pygments (1.2MiB)
+Downloading ruff (10.6MiB)
+Downloading tfp-nightly (6.7MiB)
+Downloading jax (2.8MiB)
+Downloading ml-dtypes (4.8MiB)
+Downloading jaxlib (76.6MiB)
+ Downloaded pygments
+ Downloaded ml-dtypes
+    Updated https://github.com/google-deepmind/kfac-jax (7331c3ebc03bb0899dda45c5fc6a1caaf306ff7a)
+   Building kfac-jax @ git+https://github.com/google-deepmind/kfac-jax@7331c3ebc03bb0899dda45c5fc6a1caaf306ff7a
+ Downloaded jax
+ Downloaded ruff
+ Downloaded numpy
+      Built ferminet-jax @ file:///app
+      Built kfac-jax @ git+https://github.com/google-deepmind/kfac-jax@7331c3ebc03bb0899dda45c5fc6a1caaf306ff7a
+ Downloaded tfp-nightly
+ Downloaded scipy
+ Downloaded jaxlib
+Installed 33 packages in 81ms
+Setting up benchmark...
+Starting training...
+Step       10 | E    -1.292476 | Var   0.666010 | pmove  0.952 | width  0.020 | lr  0.00045 | 18.14 s
+Step       20 | E    -1.165592 | Var   0.190491 | pmove  0.947 | width  0.020 | lr  0.00095 | 3.19 s
+Step       30 | E    -1.115233 | Var   0.092854 | pmove  0.946 | width  0.020 | lr  0.00145 | 3.03 s
+Step       40 | E    -1.139067 | Var   0.051283 | pmove  0.959 | width  0.020 | lr  0.00195 | 3.13 s
+Step       50 | E    -1.148203 | Var   0.031521 | pmove  0.952 | width  0.020 | lr  0.00245 | 2.96 s
+Benchmark completed in 37.6738 seconds
