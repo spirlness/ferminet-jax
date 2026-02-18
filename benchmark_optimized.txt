@@ -1,0 +1,8 @@
+Setting up benchmark...
+Starting training...
+Step       10 | E    -1.292476 | Var   0.666010 | pmove  0.952 | width  0.020 | lr  0.00045 | 17.68 s
+Step       20 | E    -1.165592 | Var   0.190491 | pmove  0.947 | width  0.020 | lr  0.00095 | 2.99 s
+Step       30 | E    -1.115233 | Var   0.092854 | pmove  0.946 | width  0.020 | lr  0.00145 | 3.20 s
+Step       40 | E    -1.139067 | Var   0.051283 | pmove  0.959 | width  0.020 | lr  0.00195 | 2.96 s
+Step       50 | E    -1.148203 | Var   0.031521 | pmove  0.952 | width  0.020 | lr  0.00245 | 3.59 s
+Benchmark completed in 36.8992 seconds

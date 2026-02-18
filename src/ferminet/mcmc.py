@@ -203,15 +203,15 @@ def make_mcmc_step(
 
 def update_mcmc_width(
     t: int,
-    width: float,
+    width: float | jax.Array,
     adapt_frequency: int,
-    pmove: float,
+    pmove: float | jax.Array,
     pmoves: jnp.ndarray,
     pmove_max: float = 0.55,
     pmove_min: float = 0.5,
     width_min: float = 0.001,
     width_max: float = 10.0,
-) -> tuple[float, jnp.ndarray]:
+) -> tuple[float | jax.Array, jnp.ndarray]:
     """Adapts MCMC step width based on acceptance rate."""
     target = (pmove_max + pmove_min) / 2.0
     eta = 0.5
@@ -220,6 +220,6 @@ def update_mcmc_width(
     log_width = jnp.log(width)
     delta = jnp.clip(eta * (pmove - target), -max_log_change, max_log_change)
     log_width = log_width + delta
-    width = float(jnp.clip(jnp.exp(log_width), width_min, width_max))
+    width = jnp.clip(jnp.exp(log_width), width_min, width_max)
 
     return width, pmoves
