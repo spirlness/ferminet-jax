@@ -231,22 +231,30 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         params, opt_state = new_params, new_opt_state
 
         if (i + 1) % print_every == 0:
-            stats_host = jax.device_get(stats)
+            # Fetch all stats in one go to reduce host-device synchronization
+            combined_stats = jnp.stack(
+                [stats.energy, stats.variance, stats.pmove, stats.learning_rate]
+            )
+            combined_stats_host = jax.device_get(combined_stats)
 
-            def _to_float(arr):
-                if arr.ndim > 0:
-                    return float(arr.ravel()[0])
-                return float(arr)
+            def _get_scalar(idx):
+                val = combined_stats_host[idx]
+                if val.ndim > 0:
+                    return float(val.ravel()[0])
+                return float(val)
 
-            energy_val = _to_float(stats_host.energy)
+            energy_val = _get_scalar(0)
+            variance_val = _get_scalar(1)
+            pmove_val = _get_scalar(2)
+            learning_rate_val = _get_scalar(3)
 
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
                     energy=energy_val,
-                    variance=_to_float(stats_host.variance),
-                    pmove=_to_float(stats_host.pmove),
-                    learning_rate=_to_float(stats_host.learning_rate),
+                    variance=variance_val,
+                    pmove=pmove_val,
+                    learning_rate=learning_rate_val,
                 )
                 wall = time.time() - start
                 train_utils.log_stats(i + 1, log_stats, wall, width)
@@ -255,9 +263,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
             log_stats = train_utils.StepStats(
                 energy=energy_val,
-                variance=_to_float(stats_host.variance),
-                pmove=_to_float(stats_host.pmove),
-                learning_rate=_to_float(stats_host.learning_rate),
+                variance=variance_val,
+                pmove=pmove_val,
+                learning_rate=learning_rate_val,
             )
             wall = time.time() - start
             train_utils.log_stats(i + 1, log_stats, wall, width)
