@@ -134,7 +134,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             key: jax.Array,
             step: jnp.ndarray,
             mcmc_width: Any,
-        ) -> tuple[Any, Any, Any, Any, train_utils.StepStats]:
+        ) -> tuple[Any, Any, Any, Any, jax.Array]:
             mcmc_keys, loss_keys = _p_split(key)
             new_data, pmove = pmapped_mcmc_step(params, data, mcmc_keys, mcmc_width)
 
@@ -159,9 +159,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             pmove_val = pmove[0] if hasattr(pmove, "__getitem__") else pmove
             step_val = step[0] if hasattr(step, "__getitem__") else step
             lr = jnp.asarray(schedule(step_val))
-            step_stats = train_utils.StepStats(
-                energy=energy, variance=variance, pmove=pmove_val, learning_rate=lr
-            )
+            packed_stats = jnp.array([energy, variance, pmove_val, lr])
 
             is_finite = jnp.isfinite(energy)
             new_params = jax.tree_util.tree_map(
@@ -171,7 +169,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 lambda p, np: jnp.where(is_finite, np, p), opt_state_old, new_opt_state
             )
 
-            return new_params, new_opt_state, new_data, loss_keys, step_stats
+            return new_params, new_opt_state, new_data, loss_keys, packed_stats
 
         step_fn = kfac_step_fn
     else:
@@ -185,7 +183,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             key: jax.Array,
             step: jnp.ndarray,
             mcmc_width: Any,
-        ) -> tuple[Any, Any, Any, Any, train_utils.StepStats]:
+        ) -> tuple[Any, Any, Any, Any, jax.Array]:
             key, mcmc_key, loss_key = jax.random.split(key, 3)
             new_data, pmove = mcmc_step(params, data, mcmc_key, mcmc_width)
 
@@ -197,9 +195,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             variance = constants.pmean(aux.variance)
             pmove = constants.pmean(pmove)
             lr = jnp.asarray(schedule(step))
-            stats = train_utils.StepStats(
-                energy=energy, variance=variance, pmove=pmove, learning_rate=lr
-            )
+            packed_stats = jnp.array([energy, variance, pmove, lr])
 
             is_finite = jnp.isfinite(energy)
             new_params = jax.tree_util.tree_map(
@@ -209,7 +205,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 lambda p, np: jnp.where(is_finite, np, p), opt_state, new_opt_state
             )
 
-            return new_params, new_opt_state, new_data, key, stats
+            return new_params, new_opt_state, new_data, key, packed_stats
 
         step_fn = adam_step_fn
 
@@ -226,45 +222,46 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
         step_result = step_fn(params, opt_state, data, key, step_array, width_array)
         step_result = cast(tuple[Any, Any, Any, Any, Any], step_result)
-        new_params, new_opt_state, data, key, stats = step_result
+        new_params, new_opt_state, data, key, packed_stats = step_result
 
         params, opt_state = new_params, new_opt_state
 
         if (i + 1) % print_every == 0:
-            stats_host = jax.device_get(stats)
+            packed_stats_host = jax.device_get(packed_stats)
+            # pmean in adam_step_fn or replicated KFAC ensures we can take the first index
+            if packed_stats_host.ndim == 2:
+                packed_stats_host = packed_stats_host[0]
 
-            def _to_float(arr):
-                if arr.ndim > 0:
-                    return float(arr.ravel()[0])
-                return float(arr)
+            energy_val, variance_val, pmove_val, lr_val = packed_stats_host
+            energy_val = float(energy_val)
+            variance_val = float(variance_val)
+            pmove_val = float(pmove_val)
+            lr_val = float(lr_val)
 
-            energy_val = _to_float(stats_host.energy)
+            log_stats = train_utils.StepStats(
+                energy=energy_val,
+                variance=variance_val,
+                pmove=pmove_val,
+                learning_rate=lr_val,
+            )
 
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
-                log_stats = train_utils.StepStats(
-                    energy=energy_val,
-                    variance=_to_float(stats_host.variance),
-                    pmove=_to_float(stats_host.pmove),
-                    learning_rate=_to_float(stats_host.learning_rate),
-                )
                 wall = time.time() - start
                 train_utils.log_stats(i + 1, log_stats, wall, width)
                 start = time.time()
                 continue
 
-            log_stats = train_utils.StepStats(
-                energy=energy_val,
-                variance=_to_float(stats_host.variance),
-                pmove=_to_float(stats_host.pmove),
-                learning_rate=_to_float(stats_host.learning_rate),
-            )
             wall = time.time() - start
             train_utils.log_stats(i + 1, log_stats, wall, width)
             start = time.time()
 
         if (i + 1) % adapt_frequency == 0:
-            pmove_value = _to_host(stats.pmove)
+            packed_stats_host = jax.device_get(packed_stats)
+            if packed_stats_host.ndim == 2:
+                packed_stats_host = packed_stats_host[0]
+            pmove_value = float(packed_stats_host[2])
+
             width, pmoves = mcmc.update_mcmc_width(
                 i + 1,
                 width,
