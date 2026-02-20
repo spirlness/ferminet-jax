@@ -207,6 +207,7 @@ def test_train_loop_with_stubbed_dependencies(monkeypatch, tmp_path):
 
         return step
 
+    monkeypatch.setattr(train, "make_schedule", lambda cfg: lambda s: jnp.array(0.01))
     monkeypatch.setattr(train, "_build_network", stub_build_network)
     monkeypatch.setattr(train, "_make_local_energy_fn", stub_local_energy_fn)
     monkeypatch.setattr(train.loss, "make_loss", stub_make_loss)
@@ -215,7 +216,7 @@ def test_train_loop_with_stubbed_dependencies(monkeypatch, tmp_path):
 
     def fake_pmean(x):
         return jax.tree_util.tree_map(
-            lambda leaf: leaf[None] if jnp.asarray(leaf).ndim == 0 else leaf,
+            lambda leaf: leaf,
             x,
         )
 
@@ -224,8 +225,10 @@ def test_train_loop_with_stubbed_dependencies(monkeypatch, tmp_path):
 
     def fake_device_get(x):
         return jax.tree_util.tree_map(
-            lambda leaf: jnp.asarray(leaf)[None] if jnp.ndim(leaf) == 0 else jnp.asarray(leaf),
-            x
+            lambda leaf: (
+                jnp.asarray(leaf)[None] if jnp.ndim(leaf) == 0 else jnp.asarray(leaf)
+            ),
+            x,
         )
 
     monkeypatch.setattr(train.jax, "device_get", fake_device_get, raising=False)
