@@ -224,11 +224,18 @@ def test_train_loop_with_stubbed_dependencies(monkeypatch, tmp_path):
 
     def fake_device_get(x):
         res = jax.tree_util.tree_map(
-            lambda leaf: jnp.asarray(leaf)[None] if jnp.ndim(leaf) == 0 else jnp.asarray(leaf),
-            x
+            lambda leaf: (
+                jnp.asarray(leaf)[None] if jnp.ndim(leaf) == 0 else jnp.asarray(leaf)
+            ),
+            x,
         )
         # Fix shape mismatch from identity pmap mock: (4, N) -> (N, 4)
-        if hasattr(res, "shape") and res.ndim == 2 and res.shape[0] == 4 and res.shape[1] != 4:
+        if (
+            hasattr(res, "shape")
+            and res.ndim == 2
+            and res.shape[0] == 4
+            and res.shape[1] != 4
+        ):
             return res.T
         return res
 
