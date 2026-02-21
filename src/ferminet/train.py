@@ -169,7 +169,6 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     width = jax.device_put_replicated(
         jnp.array(cfg_any.mcmc.move_width), jax.devices()
     )
-    pmoves = jnp.zeros(int(cfg_any.mcmc.adapt_frequency))
     adapt_frequency = int(cfg_any.mcmc.adapt_frequency)
     pmove_max = cfg_any.mcmc.get("pmove_max", 0.55)
     pmove_min = cfg_any.mcmc.get("pmove_min", 0.5)
