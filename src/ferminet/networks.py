@@ -518,7 +518,7 @@ def make_fermi_net(
     mask = _electron_electron_mask(n_electrons)
 
     spin_labels = jnp.concatenate([jnp.ones(n_up), -jnp.ones(n_down)])
-    same_spin = (spin_labels[:, None] == spin_labels[None, :])
+    same_spin = spin_labels[:, None] == spin_labels[None, :]
 
     def init(key: jax.Array) -> ParamTree:
         """Initialize FermiNet parameters."""
