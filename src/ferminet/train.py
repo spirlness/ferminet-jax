@@ -166,9 +166,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
     schedule = make_schedule(cfg)
     # Initialize width as a replicated device array
-    width = jax.device_put_replicated(
-        jnp.array(cfg_any.mcmc.move_width), jax.devices()
-    )
+    width = jax.device_put_replicated(jnp.array(cfg_any.mcmc.move_width), jax.devices())
     adapt_frequency = int(cfg_any.mcmc.adapt_frequency)
     pmove_max = cfg_any.mcmc.get("pmove_max", 0.55)
     pmove_min = cfg_any.mcmc.get("pmove_min", 0.5)
