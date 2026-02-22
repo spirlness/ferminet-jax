@@ -95,3 +95,22 @@ def test_mh_update_without_atoms_modifies_positions():
 
     assert new_data.positions.shape == positions.shape
     assert new_accepts >= 0.0
+
+
+def test_update_mcmc_width_jit():
+    @jax.jit
+    def jit_update(width, pmove):
+        return mcmc.update_mcmc_width(
+            t=0,
+            width=width,
+            adapt_frequency=20,
+            pmove=pmove,
+            pmoves=jnp.zeros((20,)),
+            pmove_max=0.6,
+            pmove_min=0.5,
+        )
+
+    width = 0.1
+    pmove = 0.9
+    new_width, _ = jit_update(width, pmove)
+    assert new_width > width
