@@ -517,7 +517,6 @@ def make_fermi_net(
 
     one_feat_dim = n_atoms * (ndim + 1) + n_atoms + 1
     two_feat_dim = ndim + 2
-    mask = _electron_electron_mask(n_electrons)
 
     def init(key: jax.Array) -> ParamTree:
         """Initialize FermiNet parameters."""
