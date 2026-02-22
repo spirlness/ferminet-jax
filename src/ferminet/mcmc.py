@@ -220,6 +220,6 @@ def update_mcmc_width(
     log_width = jnp.log(width)
     delta = jnp.clip(eta * (pmove - target), -max_log_change, max_log_change)
     log_width = log_width + delta
-    width = float(jnp.clip(jnp.exp(log_width), width_min, width_max))
+    width = jnp.clip(jnp.exp(log_width), width_min, width_max)
 
     return width, pmoves

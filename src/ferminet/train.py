@@ -41,6 +41,48 @@ _shard_data = device_utils.shard_data
 _p_split = device_utils.p_split
 
 
+@constants.pmap
+def _update_width_step(
+    step: jnp.ndarray,
+    width: jnp.ndarray,
+    pmove: jnp.ndarray,
+    energy: jnp.ndarray,
+    adapt_frequency: int,
+    pmove_max: float,
+    pmove_min: float,
+    move_width: float,
+) -> jnp.ndarray:
+    """Updates MCMC width on device, handling divergence and adaptation."""
+    # Synchronize energy and pmove across devices
+    energy_mean = constants.pmean(energy)
+    pmove_mean = constants.pmean(pmove)
+
+    is_finite = jnp.isfinite(energy_mean)
+
+    def adapt_fn(w):
+        new_w, _ = mcmc.update_mcmc_width(
+            step,
+            w,
+            adapt_frequency,
+            pmove_mean,
+            jnp.zeros((1,)),  # pmoves history unused
+            pmove_max=pmove_max,
+            pmove_min=pmove_min,
+        )
+        return new_w
+
+    # Only adapt if finite AND step % frequency == 0
+    do_adapt = ((step + 1) % adapt_frequency == 0) & is_finite
+    # Ensure scalar for cond (safe for both scalar and (1,) arrays)
+    do_adapt = jnp.squeeze(do_adapt)
+
+    new_width = jax.lax.cond(do_adapt, adapt_fn, lambda w: w, width)
+
+    # If not finite, reset to move_width
+    final_width = jnp.where(is_finite, new_width, move_width)
+    return final_width
+
+
 def _filter_kwargs(fn: Any, kwargs: Mapping[str, Any]) -> dict[str, Any]:
     """Filter kwargs to those accepted by fn."""
     params = inspect.signature(fn).parameters
@@ -134,7 +176,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             key: jax.Array,
             step: jnp.ndarray,
             mcmc_width: Any,
-        ) -> tuple[Any, Any, Any, Any, train_utils.StepStats]:
+        ) -> tuple[Any, Any, Any, Any, train_utils.StepStats, Any]:
             mcmc_keys, loss_keys = _p_split(key)
             new_data, pmove = pmapped_mcmc_step(params, data, mcmc_keys, mcmc_width)
 
@@ -171,7 +213,19 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 lambda p, np: jnp.where(is_finite, np, p), opt_state_old, new_opt_state
             )
 
-            return new_params, new_opt_state, new_data, loss_keys, step_stats
+            # Update MCMC width
+            new_width = _update_width_step(
+                step,
+                mcmc_width,
+                pmove,
+                loss_value,  # sharded energy
+                int(cfg_any.mcmc.adapt_frequency),
+                cfg_any.mcmc.get("pmove_max", 0.55),
+                cfg_any.mcmc.get("pmove_min", 0.5),
+                float(cfg_any.mcmc.move_width),
+            )
+
+            return new_params, new_opt_state, new_data, loss_keys, step_stats, new_width
 
         step_fn = kfac_step_fn
     else:
@@ -185,9 +239,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             key: jax.Array,
             step: jnp.ndarray,
             mcmc_width: Any,
-        ) -> tuple[Any, Any, Any, Any, train_utils.StepStats]:
+        ) -> tuple[Any, Any, Any, Any, train_utils.StepStats, Any]:
             key, mcmc_key, loss_key = jax.random.split(key, 3)
-            new_data, pmove = mcmc_step(params, data, mcmc_key, mcmc_width)
+            new_data, pmove_val = mcmc_step(params, data, mcmc_key, mcmc_width)
 
             new_params, new_opt_state, loss_value, aux, _ = update_fn(
                 params, opt_state, loss_key, new_data, step
@@ -195,7 +249,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
             energy = constants.pmean(loss_value)
             variance = constants.pmean(aux.variance)
-            pmove = constants.pmean(pmove)
+            pmove = constants.pmean(pmove_val)
             lr = jnp.asarray(schedule(step))
             stats = train_utils.StepStats(
                 energy=energy, variance=variance, pmove=pmove, learning_rate=lr
@@ -209,7 +263,26 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 lambda p, np: jnp.where(is_finite, np, p), opt_state, new_opt_state
             )
 
-            return new_params, new_opt_state, new_data, key, stats
+            # Update MCMC width (inline logic)
+            def adapt_fn(w):
+                new_w, _ = mcmc.update_mcmc_width(
+                    step,
+                    w,
+                    int(cfg_any.mcmc.adapt_frequency),
+                    pmove,
+                    jnp.zeros((1,)),
+                    pmove_max=cfg_any.mcmc.get("pmove_max", 0.55),
+                    pmove_min=cfg_any.mcmc.get("pmove_min", 0.5),
+                )
+                return new_w
+
+            do_adapt = ((step + 1) % int(cfg_any.mcmc.adapt_frequency) == 0) & is_finite
+            # Ensure scalar for cond
+            do_adapt = jnp.squeeze(do_adapt)
+            new_width = jax.lax.cond(do_adapt, adapt_fn, lambda w: w, mcmc_width)
+            new_width = jnp.where(is_finite, new_width, float(cfg_any.mcmc.move_width))
+
+            return new_params, new_opt_state, new_data, key, stats, new_width
 
         step_fn = adam_step_fn
 
@@ -220,18 +293,20 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     save_path = cfg_any.log.save_path
 
     start = time.time()
+    width_array = jnp.full((device_count,), width)
+
     for i in range(step, iterations):
-        width_array = jnp.full((device_count,), width)
         step_array = jnp.full((device_count,), i, dtype=jnp.int32)
 
         step_result = step_fn(params, opt_state, data, key, step_array, width_array)
-        step_result = cast(tuple[Any, Any, Any, Any, Any], step_result)
-        new_params, new_opt_state, data, key, stats = step_result
+        step_result = cast(tuple[Any, Any, Any, Any, Any, Any], step_result)
+        new_params, new_opt_state, data, key, stats, width_array = step_result
 
         params, opt_state = new_params, new_opt_state
 
         if (i + 1) % print_every == 0:
             stats_host = jax.device_get(stats)
+            width = float(jax.device_get(width_array)[0])
 
             def _to_float(arr):
                 if arr.ndim > 0:
@@ -239,19 +314,6 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 return float(arr)
 
             energy_val = _to_float(stats_host.energy)
-
-            if not jnp.isfinite(energy_val):
-                width = float(cfg_any.mcmc.move_width)
-                log_stats = train_utils.StepStats(
-                    energy=energy_val,
-                    variance=_to_float(stats_host.variance),
-                    pmove=_to_float(stats_host.pmove),
-                    learning_rate=_to_float(stats_host.learning_rate),
-                )
-                wall = time.time() - start
-                train_utils.log_stats(i + 1, log_stats, wall, width)
-                start = time.time()
-                continue
 
             log_stats = train_utils.StepStats(
                 energy=energy_val,
@@ -262,18 +324,6 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             wall = time.time() - start
             train_utils.log_stats(i + 1, log_stats, wall, width)
             start = time.time()
-
-        if (i + 1) % adapt_frequency == 0:
-            pmove_value = _to_host(stats.pmove)
-            width, pmoves = mcmc.update_mcmc_width(
-                i + 1,
-                width,
-                adapt_frequency,
-                pmove_value,
-                pmoves,
-                pmove_max=cfg_any.mcmc.get("pmove_max", 0.55),
-                pmove_min=cfg_any.mcmc.get("pmove_min", 0.5),
-            )
 
         if (i + 1) % checkpoint_every == 0:
             host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
