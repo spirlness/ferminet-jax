@@ -186,7 +186,7 @@ def _construct_one_electron_features(r_ae: Array, r_ae_norm: Array) -> Array:
 def _augment_one_electron_features(
     h_one: Array,
     r_ae_norm: Array,
-    spin_labels: Array,
+    spin_channel: Array,
     charges: Array,
 ) -> Array:
     """Append spin- and charge-aware channels to one-electron features."""
@@ -194,16 +194,14 @@ def _augment_one_electron_features(
         charges[None, :, None], r_ae_norm[..., None].shape
     )
     charge_channels = charge_channels.reshape(r_ae_norm.shape[0], -1)
-    spin_channel = (2.0 * jnp.asarray(spin_labels) - 1.0)[:, None]
     return jnp.concatenate([h_one, charge_channels, spin_channel], axis=-1)
 
 
 def _construct_two_electron_features(
-    r_ee: Array, r_ee_norm: Array, spin_labels: Array
+    r_ee: Array, r_ee_norm: Array, same_spin: Array
 ) -> Array:
     """Construct two-electron features from electron-electron vectors."""
-    spin_labels = jnp.asarray(spin_labels)
-    same_spin = (spin_labels[:, None] == spin_labels[None, :]).astype(r_ee.dtype)
+    same_spin = same_spin.astype(r_ee.dtype)
     return jnp.concatenate([r_ee, r_ee_norm[..., None], same_spin[..., None]], axis=-1)
 
 
@@ -517,7 +515,6 @@ def make_fermi_net(
 
     one_feat_dim = n_atoms * (ndim + 1) + n_atoms + 1
     two_feat_dim = ndim + 2
-    mask = _electron_electron_mask(n_electrons)
 
     def init(key: jax.Array) -> ParamTree:
         """Initialize FermiNet parameters."""
@@ -570,6 +567,9 @@ def make_fermi_net(
         return cast(ParamTree, params)
 
     mask = _electron_electron_mask(n_electrons)
+    fixed_spins = jnp.concatenate([jnp.zeros((n_up,)), jnp.ones((n_down,))])
+    same_spin_mask = fixed_spins[:, None] == fixed_spins[None, :]
+    spin_channel = (2.0 * fixed_spins - 1.0)[:, None]
 
     def _forward_single(
         params: ParamMapping,
@@ -579,6 +579,7 @@ def make_fermi_net(
         charges_in: Array,
     ) -> tuple[Array, Array, tuple[Array, Array]]:
         """Forward pass for a single configuration."""
+        del spins_in
         params_map = params
         r_ae = _pairwise_electron_nuclear_vectors(electrons_single, atoms_in)
         r_ee = _pairwise_electron_electron_vectors(electrons_single)
@@ -588,8 +589,10 @@ def make_fermi_net(
         r_ee_norm = jnp.sqrt(jnp.sum(r_ee**2, axis=-1) + EPS)
 
         h_one = _construct_one_electron_features(r_ae, r_ae_norm)
-        h_one = _augment_one_electron_features(h_one, r_ae_norm, spins_in, charges_in)
-        h_two = _construct_two_electron_features(r_ee, r_ee_norm, spins_in)
+        h_one = _augment_one_electron_features(
+            h_one, r_ae_norm, spin_channel, charges_in
+        )
+        h_two = _construct_two_electron_features(r_ee, r_ee_norm, same_spin_mask)
 
         layers = cast(Sequence[Mapping[str, Mapping[str, Array]]], params_map["layers"])
         for layer_index, layer_params in enumerate(layers):
