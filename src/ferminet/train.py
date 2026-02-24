@@ -239,7 +239,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 lambda p, np: jnp.where(is_finite, np, p), opt_state_old, new_opt_state
             )
 
-            new_width = pmapped_width_update(step, mcmc_width, pmove, pmoves, loss_value)
+            new_width = pmapped_width_update(
+                step, mcmc_width, pmove, pmoves, loss_value
+            )
 
             return new_params, new_opt_state, new_data, loss_keys, step_stats, new_width
 
