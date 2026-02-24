@@ -299,7 +299,6 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     iterations = int(cfg_any.optim.iterations)
     print_every = int(cfg_any.log.print_every)
     checkpoint_every = int(cfg_any.log.checkpoint_every)
-    adapt_frequency = int(cfg_any.mcmc.adapt_frequency)
     save_path = cfg_any.log.save_path
 
     start = time.time()
