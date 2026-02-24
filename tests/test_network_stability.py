@@ -53,5 +53,7 @@ def test_network_responds_to_spin_and_charge_features():
     _, log_spin = apply_fn(params, x, jnp.array([1, 0]), atoms, charges)
     _, log_charge = apply_fn(params, x, spins_arr, atoms, jnp.array([1.0]))
 
-    assert not jnp.allclose(log_base, log_spin)
+    # Spin features are now fixed by the network architecture (n_up, n_down).
+    # Changing spins argument should have no effect on features.
+    assert jnp.allclose(log_base, log_spin)
     assert not jnp.allclose(log_base, log_charge)
