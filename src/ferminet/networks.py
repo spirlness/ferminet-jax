@@ -570,7 +570,7 @@ def make_fermi_net(
 
     mask = _electron_electron_mask(n_electrons)
     spin_labels_const = jnp.concatenate([jnp.zeros(n_up), jnp.ones(n_down)])
-    same_spin = (spin_labels_const[:, None] == spin_labels_const[None, :])
+    same_spin = spin_labels_const[:, None] == spin_labels_const[None, :]
     spin_channel = (2.0 * spin_labels_const - 1.0)[:, None]
 
     def _forward_single(
@@ -590,7 +590,9 @@ def make_fermi_net(
         r_ee_norm = jnp.sqrt(jnp.sum(r_ee**2, axis=-1) + EPS)
 
         h_one = _construct_one_electron_features(r_ae, r_ae_norm)
-        h_one = _augment_one_electron_features(h_one, r_ae_norm, spin_channel, charges_in)
+        h_one = _augment_one_electron_features(
+            h_one, r_ae_norm, spin_channel, charges_in
+        )
         h_two = _construct_two_electron_features(r_ee, r_ee_norm, same_spin)
 
         layers = cast(Sequence[Mapping[str, Mapping[str, Array]]], params_map["layers"])
