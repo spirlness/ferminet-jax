@@ -1,0 +1,72 @@
+// FermiNet Architecture
+digraph {
+	compound=true fontname=Arial rankdir=TD
+	node [fillcolor="#e1f5fe" fontname=Arial shape=box style=filled]
+	edge [fontname=Arial]
+	subgraph cluster_inputs {
+		label=Inputs style=dashed
+		elec [label="Electrons
+(N, 3)" fillcolor="#fff9c4"]
+		atoms [label="Atoms
+(M, 3)" fillcolor="#fff9c4"]
+		spins [label="Spins
+(N,)" fillcolor="#fff9c4"]
+		charges [label="Charges
+(M,)" fillcolor="#fff9c4"]
+	}
+	subgraph cluster_features {
+		color=blue label="Feature Construction"
+		geom [label="Geometry
+|r_ae|, |r_ee|" fillcolor="#b3e5fc"]
+		h1 [label="One-Electron Features
+[r_ae, |r_ae|, charges, spins]" fillcolor="#b3e5fc"]
+		h2 [label="Two-Electron Features
+[r_ee, |r_ee|, same_spin]" fillcolor="#b3e5fc"]
+		env_calc [label="Envelope Function
+(Isotropic/Diagonal/Full)" fillcolor="#e1bee7"]
+		log_env [label="Log Envelope" fillcolor="#e1bee7"]
+	}
+	subgraph cluster_interaction {
+		color=green label="Interaction Stream (x4)"
+		block1 [label="Interaction Block 1
+Residual + Dense" fillcolor="#c8e6c9"]
+		block2 [label="Interaction Block 2
+Residual + Dense" fillcolor="#c8e6c9"]
+		block_dots [label="..." shape=plaintext style=""]
+		blockN [label="Interaction Block N" fillcolor="#c8e6c9"]
+	}
+	subgraph cluster_orbitals {
+		color=orange label="Orbital Shaping"
+		split [label="Split by Spin
+Up / Down"]
+		orb_up [label="Orbitals Up
+(N_up, K)" fillcolor="#ffe0b2"]
+		orb_down [label="Orbitals Down
+(N_down, K)" fillcolor="#ffe0b2"]
+		det [label="Determinants
+det(Φ↑) * det(Φ↓)" fillcolor="#ffcc80"]
+	}
+	log_psi [label="Log Wavefunction
+log|Ψ|" fillcolor="#ffab91" fontsize=14 shape=ellipse]
+	elec -> geom
+	atoms -> geom
+	geom -> h1
+	geom -> h2
+	spins -> h1
+	charges -> h1
+	spins -> h2
+	geom -> env_calc
+	env_calc -> log_env
+	h1 -> block1
+	h2 -> block1
+	block1 -> block2
+	block2 -> block_dots
+	block_dots -> blockN
+	blockN -> split
+	split -> orb_up
+	split -> orb_down
+	orb_up -> det
+	orb_down -> det
+	det -> log_psi [label=log_det]
+	log_env -> log_psi [label="+"]
+}
