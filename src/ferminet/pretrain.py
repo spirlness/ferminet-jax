@@ -11,20 +11,26 @@ def make_pretrain_step(
     network_apply: types.LogFermiNetLike,
     target_orbitals_fn: Callable,
     optimizer: optax.GradientTransformation,
+    batch_size: int,
+    n_electrons: int,
+    ndim: int = 3,
 ) -> Callable:
     def loss_fn(params, electrons, spins, atoms, charges, target_orbitals):
         log_psi = network_apply(params, electrons, spins, atoms, charges)
         return jnp.mean((log_psi - target_orbitals) ** 2)
 
     @jax.jit
-    def step(params, opt_state, batch):
-        electrons, spins, atoms, charges, target = batch
+    def step(params, opt_state, key, spins, atoms, charges):
+        key, subkey = jax.random.split(key)
+        electrons = jax.random.normal(subkey, (batch_size, n_electrons * ndim))
+        target = target_orbitals_fn(electrons, atoms, charges)
+
         loss, grads = jax.value_and_grad(loss_fn)(
             params, electrons, spins, atoms, charges, target
         )
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
-        return params, opt_state, loss
+        return params, opt_state, loss, key
 
     return step
 
@@ -47,19 +53,19 @@ def pretrain(
     optimizer = optax.adam(learning_rate)
     opt_state = optimizer.init(params)
 
-    step_fn = make_pretrain_step(apply_fn, target_fn, optimizer)
-
     n_electrons = sum(spins)
     ndim = 3
 
-    for i in range(n_iterations):
-        key, subkey = jax.random.split(key)
-        electrons = jax.random.normal(subkey, (batch_size, n_electrons * ndim))
-        spins_arr = jnp.array([0] * spins[0] + [1] * spins[1])
-        target = target_fn(electrons, atoms, charges)
+    step_fn = make_pretrain_step(
+        apply_fn, target_fn, optimizer, batch_size, n_electrons, ndim
+    )
 
-        batch = (electrons, spins_arr, atoms, charges, target)
-        params, opt_state, loss = step_fn(params, opt_state, batch)
+    spins_arr = jnp.array([0] * spins[0] + [1] * spins[1])
+
+    for i in range(n_iterations):
+        params, opt_state, loss, key = step_fn(
+            params, opt_state, key, spins_arr, atoms, charges
+        )
 
         if (i + 1) % 100 == 0:
             print(f"Pretrain step {i + 1}/{n_iterations}, loss: {loss:.6f}")
