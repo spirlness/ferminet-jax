@@ -29,7 +29,7 @@ def test_mh_accept_rejects_non_finite_proposals():
     key = jax.random.PRNGKey(0)
     num_accepts = jnp.array(0.0)
 
-    new_positions, new_lp, accepts = mcmc.mh_accept(
+    new_positions, new_lp, accepts, new_hmean = mcmc.mh_accept(
         x1, x2, lp1, lp2, ratio, key, num_accepts
     )
 
@@ -37,6 +37,7 @@ def test_mh_accept_rejects_non_finite_proposals():
     assert jnp.array_equal(new_positions[1], x2[1])
     assert accepts > 0
     assert jnp.isfinite(new_lp[1])
+    assert new_hmean is None
 
 
 def test_log_prob_gaussian_and_width_update_behaviour():
@@ -81,13 +82,14 @@ def test_mh_update_without_atoms_modifies_positions():
 
     lp1 = jnp.zeros((2,))
     num_accepts = jnp.array(0.0)
-    new_data, _, _, new_accepts = mcmc.mh_update(
+    new_data, _, _, new_accepts, new_hmean = mcmc.mh_update(
         params={},
         f=dummy_network,
         data=data,
         key=jax.random.PRNGKey(0),
         lp_1=lp1,
         num_accepts=num_accepts,
+        hmean_1=None,
         stddev=0.1,
         atoms=None,
         ndim=2,
@@ -95,3 +97,44 @@ def test_mh_update_without_atoms_modifies_positions():
 
     assert new_data.positions.shape == positions.shape
     assert new_accepts >= 0.0
+    assert new_hmean is None
+
+
+def test_mh_update_with_atoms_updates_hmean():
+    def dummy_network(params, positions, spins, atoms, charges):
+        return jnp.zeros((positions.shape[0],))
+
+    ndim = 3
+    nelec = 2
+    batch = 2
+    positions = jnp.ones((batch, nelec * ndim))
+    spins = jnp.array([0, 0])
+    atoms = jnp.array([[0.0, 0.0, 0.0]])
+    charges = jnp.array([1.0])
+    data = types.FermiNetData(
+        positions=positions, spins=spins, atoms=atoms, charges=charges
+    )
+
+    lp1 = jnp.zeros((batch,))
+    num_accepts = jnp.array(0.0)
+
+    # Calculate initial hmean manually
+    x_reshaped = jnp.reshape(positions, [batch, nelec, 1, ndim])
+    hmean_init = mcmc._harmonic_mean(x_reshaped, atoms)
+
+    new_data, _, _, new_accepts, new_hmean = mcmc.mh_update(
+        params={},
+        f=dummy_network,
+        data=data,
+        key=jax.random.PRNGKey(0),
+        lp_1=lp1,
+        num_accepts=num_accepts,
+        hmean_1=hmean_init,
+        stddev=0.1,
+        atoms=atoms,
+        ndim=ndim,
+    )
+
+    assert new_data.positions.shape == positions.shape
+    assert new_hmean is not None
+    assert new_hmean.shape == hmean_init.shape

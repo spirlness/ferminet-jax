@@ -12,7 +12,9 @@ from jax import lax
 from ferminet.types import FermiNetData, LogFermiNetLike, ParamTree
 from ferminet.utils.numerics import EPS
 
-MCMCState: TypeAlias = tuple[FermiNetData, jax.Array, jnp.ndarray, jnp.ndarray]
+MCMCState: TypeAlias = tuple[
+    FermiNetData, jax.Array, jnp.ndarray, jnp.ndarray, jnp.ndarray | None
+]
 T = TypeVar("T")
 
 
@@ -66,7 +68,9 @@ def mh_accept(
     ratio: jnp.ndarray,
     subkey: jax.Array,
     num_accepts: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    hmean1: jnp.ndarray | None = None,
+    hmean2: jnp.ndarray | None = None,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray | None]:
     """Metropolis-Hastings accept/reject step with non-finite guards."""
     rnd = jnp.log(jax.random.uniform(subkey, shape=ratio.shape))
     finite_proposal = jnp.isfinite(lp_2) & jnp.isfinite(ratio)
@@ -74,7 +78,13 @@ def mh_accept(
     x_new = jnp.where(cond[..., None], x2, x1)
     lp_new = jnp.where(cond, lp_2, lp_1)
     num_accepts += jnp.sum(cond)
-    return x_new, lp_new, num_accepts
+
+    if hmean1 is not None and hmean2 is not None:
+        hmean_new = jnp.where(cond[..., None, None, None], hmean2, hmean1)
+    else:
+        hmean_new = None
+
+    return x_new, lp_new, num_accepts, hmean_new
 
 
 def mh_update(
@@ -84,10 +94,11 @@ def mh_update(
     key: jax.Array,
     lp_1: jnp.ndarray,
     num_accepts: jnp.ndarray,
+    hmean_1: jnp.ndarray | None,
     stddev: float = 0.02,
     atoms: jnp.ndarray | None = None,
     ndim: int = 3,
-) -> tuple[FermiNetData, jax.Array, jnp.ndarray, jnp.ndarray]:
+) -> tuple[FermiNetData, jax.Array, jnp.ndarray, jnp.ndarray, jnp.ndarray | None]:
     """Performs one MH step using all-electron move.
 
     Args:
@@ -97,12 +108,13 @@ def mh_update(
         key: RNG key.
         lp_1: Current log probability (2 * log|psi|).
         num_accepts: Running total of accepts.
+        hmean_1: Current harmonic mean distances (or None).
         stddev: Proposal standard deviation.
         atoms: Atom positions for adaptive proposal.
         ndim: Dimensionality.
 
     Returns:
-        (new_data, key, lp_new, num_accepts)
+        (new_data, key, lp_new, num_accepts, hmean_new)
     """
     key, subkey, subkey_accept = jax.random.split(key, num=3)
     positions, spins, atoms_data, charges = _asarray_data(data)
@@ -114,33 +126,44 @@ def mh_update(
         x2 = x1 + stddev * noise
         lp_2 = 2.0 * f(params, x2, spins, atoms_data, charges)
         ratio = lp_2 - lp_1
+        hmean_2 = None
+        x2_flat = x2
     else:
         # Asymmetric proposal scaled by harmonic mean to atoms
         n = x1.shape[0]
         x1 = jnp.reshape(x1, [n, -1, 1, ndim])
-        hmean1 = _harmonic_mean(x1, atoms)
+        # Use passed hmean_1 if available, otherwise compute it
+        if hmean_1 is None:
+            hmean_1 = _harmonic_mean(x1, atoms)
 
         noise = jax.random.normal(subkey, shape=x1.shape)
-        x2 = x1 + stddev * hmean1 * noise
+        x2 = x1 + stddev * hmean_1 * noise
         x2_flat = jnp.reshape(x2, [n, -1])
         lp_2 = 2.0 * f(params, x2_flat, spins, atoms_data, charges)
-        hmean2 = _harmonic_mean(x2, atoms)
+        hmean_2 = _harmonic_mean(x2, atoms)
 
         # Forward and reverse probabilities for detailed balance
-        lq_1 = _log_prob_gaussian(x1, x2, stddev * hmean1)
-        lq_2 = _log_prob_gaussian(x2, x1, stddev * hmean2)
+        lq_1 = _log_prob_gaussian(x1, x2, stddev * hmean_1)
+        lq_2 = _log_prob_gaussian(x2, x1, stddev * hmean_2)
         ratio = lp_2 + lq_2 - lp_1 - lq_1
 
         x1 = jnp.reshape(x1, [n, -1])
-        x2 = x2_flat
 
-    x_new, lp_new, num_accepts = mh_accept(
-        x1, x2, lp_1, lp_2, ratio, subkey_accept, num_accepts
+    x_new, lp_new, num_accepts, hmean_new = mh_accept(
+        x1,
+        x2_flat,
+        lp_1,
+        lp_2,
+        ratio,
+        subkey_accept,
+        num_accepts,
+        hmean_1,
+        hmean_2,
     )
 
     # Update data with new positions
     new_data = data._replace(positions=x_new)
-    return new_data, key, lp_new, num_accepts
+    return new_data, key, lp_new, num_accepts, hmean_new
 
 
 def _log_prob_gaussian(
@@ -190,9 +213,16 @@ def make_mcmc_step(
         positions, spins, atoms_data, charges = _asarray_data(data)
         logprob = 2.0 * batch_network(params, positions, spins, atoms_data, charges)
 
+        if atoms is not None:
+            n = positions.shape[0]
+            x_reshaped = jnp.reshape(positions, [n, -1, 1, ndim])
+            hmean_init = _harmonic_mean(x_reshaped, atoms)
+        else:
+            hmean_init = None
+
         num_accepts_init = jnp.array(0.0)
-        new_data, key, _, num_accepts = _fori_loop(
-            0, steps, step_fn, (data, key, logprob, num_accepts_init)
+        new_data, key, _, num_accepts, _ = _fori_loop(
+            0, steps, step_fn, (data, key, logprob, num_accepts_init, hmean_init)
         )
 
         pmove = num_accepts / (steps * batch_per_device)
