@@ -224,6 +224,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         width_array = jnp.full((device_count,), width)
         step_array = jnp.full((device_count,), i, dtype=jnp.int32)
 
+        if cfg_any.optim.optimizer == "kfac" and i % 100 == 0:
+            jax.tree_util.tree_map(lambda x: x.block_until_ready(), opt_state)
+
         step_result = step_fn(params, opt_state, data, key, step_array, width_array)
         step_result = cast(tuple[Any, Any, Any, Any, Any], step_result)
         new_params, new_opt_state, data, key, stats = step_result
