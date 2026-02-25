@@ -1,7 +1,7 @@
 """Tests for validate_config in base_config.py."""
 
-import pytest
 import ml_collections
+import pytest
 
 from ferminet import base_config
 
