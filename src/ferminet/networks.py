@@ -529,7 +529,6 @@ def make_fermi_net(
 
     one_feat_dim = n_atoms * (ndim + 1) + n_atoms + 1
     two_feat_dim = ndim + 2
-    mask = _electron_electron_mask(n_electrons)
 
     def init(key: jax.Array) -> ParamTree:
         """Initialize FermiNet parameters."""
@@ -581,7 +580,7 @@ def make_fermi_net(
 
         return cast(ParamTree, params)
 
-    mask = _electron_electron_mask(n_electrons)
+    ee_mask = _electron_electron_mask(n_electrons)
 
     def _forward_single(
         params: ParamMapping,
@@ -609,7 +608,7 @@ def make_fermi_net(
                 layer_params,
                 h_one,
                 h_two,
-                mask,
+                ee_mask,
                 activation,
                 use_residual=layer_index > 0,
             )
