@@ -131,7 +131,7 @@ def mh_update(
         stddev_arr = jnp.asarray(stddev)
         if stddev_arr.ndim >= 1 and x1.ndim == 2:
             # stddev is per-electron, x1 is (batch, nelec*ndim)
-            nelec = stddev_arr.shape[0]
+            stddev_arr.shape[0]
             stddev_broad = jnp.repeat(stddev_arr, ndim)[None, :]
         else:
             stddev_broad = stddev_arr
