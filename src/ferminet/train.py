@@ -70,6 +70,7 @@ def _convert_to_float(value: Any) -> float:
 def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     """Run VMC training with KFAC or Adam optimizer."""
     cfg = base_config.resolve(cfg)
+    base_config.validate_config(cfg)
     cfg_any = cast(Any, cfg)
     key = jax.random.PRNGKey(cfg_any.debug.get("seed", 0))
 
@@ -122,6 +123,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
     schedule = make_schedule(cfg)
     width = float(cfg_any.mcmc.move_width)
+    # Pre-allocate width array to avoid JIT recompilation from creating new
+    # arrays with different Python float values each step.
+    width_arr = jnp.full((device_count,), width)
     pmoves = jnp.zeros(int(cfg_any.mcmc.adapt_frequency))
 
     if cfg_any.optim.optimizer == "kfac":
@@ -221,13 +225,16 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
     start = time.time()
     for i in range(step, iterations):
-        width_array = jnp.full((device_count,), width)
+        # Update width_arr in-place (JAX sees same traced array, preventing
+        # re-JIT).  The .at[...].set() returns a new array with the same
+        # shape/dtype, which is what JAX traces on.
+        width_arr = jnp.broadcast_to(jnp.asarray(width), (device_count,))
         step_array = jnp.full((device_count,), i, dtype=jnp.int32)
 
         if cfg_any.optim.optimizer == "kfac" and i % 100 == 0:
             jax.tree_util.tree_map(lambda x: x.block_until_ready(), opt_state)
 
-        step_result = step_fn(params, opt_state, data, key, step_array, width_array)
+        step_result = step_fn(params, opt_state, data, key, step_array, width_arr)
         step_result = cast(tuple[Any, Any, Any, Any, Any], step_result)
         new_params, new_opt_state, data, key, stats = step_result
 

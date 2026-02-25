@@ -172,3 +172,64 @@ def default() -> ml_collections.ConfigDict:
 def resolve(cfg: ml_collections.ConfigDict) -> ml_collections.ConfigDict:
     """Resolves FieldReferences in the provided configuration."""
     return cfg.copy_and_resolve_references()
+
+
+# ── Valid values for key configuration fields ─────────────────────────────
+_VALID_OPTIMIZERS = {"kfac", "adam"}
+_VALID_LAPLACIAN_MODES = {"default", "scan", "forward_over_reverse"}
+_VALID_ENVELOPE_TYPES = {"isotropic", "diagonal", "full"}
+
+
+def validate_config(cfg: ml_collections.ConfigDict) -> None:
+    """Validate core configuration fields before training.
+
+    Raises ``ValueError`` for clearly invalid settings so that problems are
+    caught at startup rather than deep inside a training loop.
+    """
+    from typing import cast, Any
+
+    c = cast(Any, cfg)
+
+    # ── batch_size ─────────────────────────────────────────────────────────
+    batch_size = int(c.batch_size)
+    if batch_size <= 0:
+        raise ValueError(f"batch_size must be > 0, got {batch_size}")
+
+    # ── optimizer ──────────────────────────────────────────────────────────
+    optimizer = str(c.optim.optimizer)
+    if optimizer not in _VALID_OPTIMIZERS:
+        raise ValueError(
+            f"Unsupported optimizer '{optimizer}'. "
+            f"Choose from: {sorted(_VALID_OPTIMIZERS)}"
+        )
+
+    # ── laplacian mode ─────────────────────────────────────────────────────
+    laplacian = str(c.optim.get("laplacian", "default"))
+    if laplacian not in _VALID_LAPLACIAN_MODES:
+        raise ValueError(
+            f"Unsupported laplacian mode '{laplacian}'. "
+            f"Choose from: {sorted(_VALID_LAPLACIAN_MODES)}"
+        )
+
+    # ── hidden_dims ────────────────────────────────────────────────────────
+    hidden_dims = c.network.ferminet.hidden_dims
+    if not isinstance(hidden_dims, (list, tuple)):
+        raise ValueError("network.ferminet.hidden_dims must be a list/tuple of pairs")
+    for i, pair in enumerate(hidden_dims):
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+            raise ValueError(
+                f"hidden_dims[{i}] must be a (one_dim, two_dim) pair, got {pair}"
+            )
+
+    # ── envelope type ──────────────────────────────────────────────────────
+    envelope = str(c.network.get("envelope_type", "isotropic")).lower()
+    if envelope not in _VALID_ENVELOPE_TYPES:
+        raise ValueError(
+            f"Unsupported envelope_type '{envelope}'. "
+            f"Choose from: {sorted(_VALID_ENVELOPE_TYPES)}"
+        )
+
+    # ── iterations ─────────────────────────────────────────────────────────
+    iterations = int(c.optim.iterations)
+    if iterations <= 0:
+        raise ValueError(f"optim.iterations must be > 0, got {iterations}")

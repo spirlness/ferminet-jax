@@ -41,6 +41,18 @@ ParamTree = types.ParamTree
 ParamMapping = Mapping[str, types.ParamTree]
 PMAP_AXIS_NAME = constants.PMAP_AXIS_NAME
 
+# ── Parameter key constants ──────────────────────────────────────────────────
+# Centralised keys eliminate typo-related bugs and make refactoring safer.
+_KEY_LAYERS = "layers"
+_KEY_ORBITALS = "orbitals"
+_KEY_ENVELOPE = "envelope"
+_KEY_ONE = "one"
+_KEY_TWO = "two"
+_KEY_UP = "up"
+_KEY_DOWN = "down"
+_KEY_W = "w"
+_KEY_B = "b"
+
 
 def _resolve_config(cfg: ml_collections.ConfigDict) -> ml_collections.ConfigDict:
     """Resolve FieldReferences in the configuration."""
@@ -243,7 +255,7 @@ def _init_interaction_layer(
     two_params: dict[str, Array] = dict(
         network_blocks.init_linear_layer(key_two, in_dim_two, out_dim_two)
     )
-    return {"one": one_params, "two": two_params}
+    return {_KEY_ONE: one_params, _KEY_TWO: two_params}
 
 
 def _apply_interaction_layer(
@@ -260,15 +272,15 @@ def _apply_interaction_layer(
     h_two_mean = _masked_mean(h_two, mask)
 
     h_one_input = jnp.concatenate([h_one, h_one_mean, h_two_mean], axis=-1)
-    one_params = params["one"]
-    two_params = params["two"]
-    one_bias = one_params["b"] if "b" in one_params else None
-    two_bias = two_params["b"] if "b" in two_params else None
+    one_params = params[_KEY_ONE]
+    two_params = params[_KEY_TWO]
+    one_bias = one_params[_KEY_B] if _KEY_B in one_params else None
+    two_bias = two_params[_KEY_B] if _KEY_B in two_params else None
     h_one_new = activation(
-        network_blocks.linear_layer(h_one_input, one_params["w"], one_bias)
+        network_blocks.linear_layer(h_one_input, one_params[_KEY_W], one_bias)
     )
     h_two_new = activation(
-        network_blocks.linear_layer(h_two, two_params["w"], two_bias)
+        network_blocks.linear_layer(h_two, two_params[_KEY_W], two_bias)
     )
 
     if use_residual and h_one_new.shape == h_one.shape:
@@ -303,8 +315,8 @@ def _apply_orbital_layer(
     """Project features into orbital matrices for a spin channel."""
     if n_spin == 0:
         return jnp.zeros((n_determinants, 0, 0))
-    bias = params["b"] if "b" in params else None
-    projected = network_blocks.linear_layer(h_spin, params["w"], bias)
+    bias = params[_KEY_B] if _KEY_B in params else None
+    projected = network_blocks.linear_layer(h_spin, params[_KEY_W], bias)
     projected = projected.reshape(n_spin, n_determinants, n_spin)
     return jnp.transpose(projected, (1, 0, 2))
 
@@ -545,13 +557,13 @@ def make_fermi_net(
         key_up = keys[1]
         key_down = keys[2]
         orbitals: dict[str, ParamTree] = {
-            "up": cast(
+            _KEY_UP: cast(
                 ParamTree,
                 _init_orbital_layer(
                     key_up, in_dim_one, n_up, n_determinants, bias_orbitals
                 ),
             ),
-            "down": cast(
+            _KEY_DOWN: cast(
                 ParamTree,
                 _init_orbital_layer(
                     key_down, in_dim_one, n_down, n_determinants, bias_orbitals
@@ -559,13 +571,13 @@ def make_fermi_net(
             ),
         }
 
-        params["layers"] = cast(ParamTree, layers)
-        params["orbitals"] = cast(ParamTree, orbitals)
+        params[_KEY_LAYERS] = cast(ParamTree, layers)
+        params[_KEY_ORBITALS] = cast(ParamTree, orbitals)
         envelope_params = dict(envelope_fn.init(n_atoms, (1,), ndim))
         for key_name, value in tuple(envelope_params.items()):
             if key_name.startswith("sigma_"):
                 envelope_params[key_name] = jnp.asarray(value) * sigma_init
-        params["envelope"] = cast(ParamTree, envelope_params)
+        params[_KEY_ENVELOPE] = cast(ParamTree, envelope_params)
 
         return cast(ParamTree, params)
 
@@ -591,7 +603,7 @@ def make_fermi_net(
         h_one = _augment_one_electron_features(h_one, r_ae_norm, spins_in, charges_in)
         h_two = _construct_two_electron_features(r_ee, r_ee_norm, spins_in)
 
-        layers = cast(Sequence[Mapping[str, Mapping[str, Array]]], params_map["layers"])
+        layers = cast(Sequence[Mapping[str, Mapping[str, Array]]], params_map[_KEY_LAYERS])
         for layer_index, layer_params in enumerate(layers):
             h_one, h_two = _apply_interaction_layer(
                 layer_params,
@@ -605,14 +617,14 @@ def make_fermi_net(
         h_up = h_one[:n_up]
         h_down = h_one[n_up:]
 
-        orbitals = cast(Mapping[str, Mapping[str, Array]], params_map["orbitals"])
-        orb_up = _apply_orbital_layer(orbitals["up"], h_up, n_up, n_determinants)
+        orbitals = cast(Mapping[str, Mapping[str, Array]], params_map[_KEY_ORBITALS])
+        orb_up = _apply_orbital_layer(orbitals[_KEY_UP], h_up, n_up, n_determinants)
         orb_down = _apply_orbital_layer(
-            orbitals["down"], h_down, n_down, n_determinants
+            orbitals[_KEY_DOWN], h_down, n_down, n_determinants
         )
 
         sign, log_det = _combine_determinants(orb_up, orb_down, n_up, n_down)
-        envelope_params = cast(envelopes.EnvelopeParams, params_map["envelope"])
+        envelope_params = cast(envelopes.EnvelopeParams, params_map[_KEY_ENVELOPE])
         envelope_outputs = envelope_fn.apply(envelope_params, r_ae, r_ae_norm, (1,))
         envelope_val = envelope_outputs[0]
         if envelope_val is None:

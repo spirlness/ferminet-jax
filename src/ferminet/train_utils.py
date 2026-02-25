@@ -95,12 +95,15 @@ def make_local_energy_fn(
         log_psi = apply_log(params, positions, spins_arr, atoms_arr, charges_arr)
         return jnp.ones_like(log_psi), log_psi
 
+    laplacian_cfg = cfg_any.optim.get("laplacian", "default")
+
     single_local_energy = hamiltonian.local_energy(
         apply_sign_log,
         charges=charges,
         nspins=spins,
-        use_scan=cfg_any.optim.get("laplacian", "default") == "scan",
+        use_scan=laplacian_cfg == "scan",
         complex_output=cfg_any.network.get("complex", False),
+        laplacian_mode=laplacian_cfg,
     )
 
     def local_energy_fn(

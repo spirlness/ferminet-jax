@@ -28,6 +28,7 @@ def local_kinetic_energy(
     f: types.FermiNetLike,
     use_scan: bool = False,
     complex_output: bool = False,
+    laplacian_mode: str = "default",
 ) -> Callable[[types.ParamTree, types.FermiNetData], jnp.ndarray]:
     """Creates function for local kinetic energy: -1/2 nabla^2 log|psi|.
 
@@ -36,12 +37,23 @@ def local_kinetic_energy(
 
     Args:
         f: Network function returning (sign, log_magnitude).
-        use_scan: Whether to use lax.scan for Laplacian.
+        use_scan: Whether to use lax.scan for Laplacian (ignored when
+            *laplacian_mode* is ``"forward_over_reverse"``).
         complex_output: Whether output is complex.
+        laplacian_mode: Strategy for computing the Laplacian trace.
+            ``"default"`` — ``lax.fori_loop`` over ``jax.linearize`` pushforwards
+            (original behaviour).
+            ``"scan"`` — ``lax.scan`` over ``jax.linearize`` pushforwards.
+            ``"forward_over_reverse"`` — per-coordinate ``jax.jvp(jax.grad)``
+            which avoids materialising the full linearised closure and can be
+            faster on GPU for larger systems.
 
     Returns:
         Function computing kinetic energy.
     """
+    # Normalise legacy flag into the unified mode string.
+    if laplacian_mode == "default" and use_scan:
+        laplacian_mode = "scan"
 
     def logabs_f(
         params: types.ParamTree,
@@ -63,6 +75,37 @@ def local_kinetic_energy(
         jax.grad(logabs_f, argnums=1),
     )
 
+    # ── forward-over-reverse mode ─────────────────────────────────────────
+    if laplacian_mode == "forward_over_reverse":
+
+        def kinetic_fwd_rev(
+            params: types.ParamTree,
+            data: types.FermiNetData,
+        ) -> jnp.ndarray:
+            positions = cast(jnp.ndarray, data.positions)
+            spins = cast(jnp.ndarray, data.spins)
+            atoms = cast(jnp.ndarray, data.atoms)
+            charges = cast(jnp.ndarray, data.charges)
+            n = positions.shape[0]
+
+            def grad_closure(x: jnp.ndarray) -> jnp.ndarray:
+                return grad_f(params, x, spins, atoms, charges)
+
+            def hessian_diag_i(i: int, acc: jnp.ndarray) -> jnp.ndarray:
+                tangent = jnp.zeros_like(positions).at[i].set(1.0)
+                _, hvp = jax.jvp(grad_closure, (positions,), (tangent,))
+                return acc + hvp[i]
+
+            primal = grad_closure(positions)
+            laplacian = cast(
+                jnp.ndarray, lax.fori_loop(0, n, hessian_diag_i, jnp.float32(0.0))
+            )
+            grad_squared = jnp.sum(primal**2)
+            return -0.5 * (laplacian + grad_squared)
+
+        return kinetic_fwd_rev
+
+    # ── linearize-based modes (default / scan) ────────────────────────────
     def kinetic(
         params: types.ParamTree,
         data: types.FermiNetData,
@@ -77,15 +120,15 @@ def local_kinetic_energy(
         def grad_closure(x: jnp.ndarray) -> jnp.ndarray:
             return grad_f(params, x, spins, atoms, charges)
 
-        primal, dgrad_f = cast(
+        primal, dgrad_f_fn = cast(
             tuple[jnp.ndarray, Callable[[jnp.ndarray], jnp.ndarray]],
             jax.linearize(grad_closure, positions),
         )
 
         def hessian_diagonal(i: int) -> jnp.ndarray:
-            return dgrad_f(eye[i])[i]
+            return dgrad_f_fn(eye[i])[i]
 
-        if use_scan:
+        if laplacian_mode == "scan":
 
             def scan_body(i: int, _: None) -> tuple[int, jnp.ndarray]:
                 return i + 1, hessian_diagonal(i)
@@ -151,6 +194,7 @@ def local_energy(
     nspins: Sequence[int],
     use_scan: bool = False,
     complex_output: bool = False,
+    laplacian_mode: str = "default",
 ) -> LocalEnergy:
     """Creates the local energy function E_L = T + V.
 
@@ -158,14 +202,17 @@ def local_energy(
         f: Network function.
         charges: Nuclear charges.
         nspins: Number of electrons per spin.
-        use_scan: Use scan for Laplacian.
+        use_scan: Use scan for Laplacian (legacy; prefer *laplacian_mode*).
         complex_output: Complex-valued output.
+        laplacian_mode: Laplacian strategy — see :func:`local_kinetic_energy`.
 
     Returns:
         LocalEnergy function.
     """
     _ = nspins
-    kinetic_fn = local_kinetic_energy(f, use_scan, complex_output)
+    kinetic_fn = local_kinetic_energy(
+        f, use_scan, complex_output, laplacian_mode=laplacian_mode
+    )
 
     def e_l(
         params: types.ParamTree,

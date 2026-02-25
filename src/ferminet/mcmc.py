@@ -95,7 +95,7 @@ def mh_update(
     lp_1: jnp.ndarray,
     num_accepts: jnp.ndarray,
     hmean_1: jnp.ndarray | None,
-    stddev: float = 0.02,
+    stddev: float | jnp.ndarray = 0.02,
     atoms: jnp.ndarray | None = None,
     ndim: int = 3,
 ) -> tuple[FermiNetData, jax.Array, jnp.ndarray, jnp.ndarray, jnp.ndarray | None]:
@@ -109,7 +109,9 @@ def mh_update(
         lp_1: Current log probability (2 * log|psi|).
         num_accepts: Running total of accepts.
         hmean_1: Current harmonic mean distances (or None).
-        stddev: Proposal standard deviation.
+        stddev: Proposal standard deviation. Can be a scalar (same for all
+            electrons) or a per-electron array of shape ``(n_electrons,)``
+            for shell-adaptive proposals.
         atoms: Atom positions for adaptive proposal.
         ndim: Dimensionality.
 
@@ -121,9 +123,19 @@ def mh_update(
     x1: jnp.ndarray = positions
 
     if atoms is None:
-        # Symmetric proposal
+        # Symmetric proposal — stddev can be scalar or per-electron array.
         noise = jax.random.normal(subkey, shape=x1.shape)
-        x2 = x1 + stddev * noise
+        # Broadcast: if stddev is per-electron (shape (nelec,)), reshape to
+        # (1, nelec*ndim) or (nelec, ndim) depending on x1 layout so that
+        # multiplication broadcasts correctly.
+        stddev_arr = jnp.asarray(stddev)
+        if stddev_arr.ndim >= 1 and x1.ndim == 2:
+            # stddev is per-electron, x1 is (batch, nelec*ndim)
+            nelec = stddev_arr.shape[0]
+            stddev_broad = jnp.repeat(stddev_arr, ndim)[None, :]
+        else:
+            stddev_broad = stddev_arr
+        x2 = x1 + stddev_broad * noise
         lp_2 = 2.0 * f(params, x2, spins, atoms_data, charges)
         ratio = lp_2 - lp_1
         hmean_2 = None
