@@ -186,7 +186,7 @@ def validate_config(cfg: ml_collections.ConfigDict) -> None:
     Raises ``ValueError`` for clearly invalid settings so that problems are
     caught at startup rather than deep inside a training loop.
     """
-    from typing import cast, Any
+    from typing import Any, cast
 
     c = cast(Any, cfg)
 

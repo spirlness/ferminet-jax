@@ -603,7 +603,9 @@ def make_fermi_net(
         h_one = _augment_one_electron_features(h_one, r_ae_norm, spins_in, charges_in)
         h_two = _construct_two_electron_features(r_ee, r_ee_norm, spins_in)
 
-        layers = cast(Sequence[Mapping[str, Mapping[str, Array]]], params_map[_KEY_LAYERS])
+        layers = cast(
+            Sequence[Mapping[str, Mapping[str, Array]]], params_map[_KEY_LAYERS]
+        )
         for layer_index, layer_params in enumerate(layers):
             h_one, h_two = _apply_interaction_layer(
                 layer_params,
