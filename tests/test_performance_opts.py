@@ -13,28 +13,26 @@ from ferminet.configs import helium
 from ferminet.constants import pmap_with_donate
 from ferminet.hamiltonian import (
     local_energy as make_local_energy,
-    potential_electron_electron,
-    potential_electron_nuclear,
+)
+from ferminet.hamiltonian import (
     potential_nuclear_nuclear,
-    potential_energy,
-    construct_input_features,
 )
 from ferminet.networks import (
-    make_fermi_net,
     _apply_interaction_layer,
-    _init_interaction_layer,
     _electron_electron_mask,
+    _init_interaction_layer,
+    make_fermi_net,
 )
 from ferminet.types import FermiNetData
 
-
 # ── P1: Precomputed V_nn ──────────────────────────────────────────────────────
+
 
 def test_precomputed_vnn_matches_per_step():
     """V_nn precomputed in factory matches per-step recomputation."""
     atoms = jnp.array([[0.0, 0.0, 0.0], [1.4, 0.0, 0.0]])
     charges = jnp.array([1.0, 1.0])
-    v_nn_expected = potential_nuclear_nuclear(charges, atoms)
+    # v_nn_expected = potential_nuclear_nuclear(charges, atoms)
 
     nspins = (1, 1)
     cfg = helium.get_config()
@@ -53,7 +51,9 @@ def test_precomputed_vnn_matches_per_step():
     key = jax.random.PRNGKey(1)
     positions = jax.random.normal(key, (sum(nspins) * 3,)) * 0.5
     spins_arr = jnp.array([0, 1])
-    data = FermiNetData(positions=positions, spins=spins_arr, atoms=atoms, charges=charges)
+    data = FermiNetData(
+        positions=positions, spins=spins_arr, atoms=atoms, charges=charges
+    )
 
     e_cached, _ = el_cached(params, key, data)
     e_nocache, _ = el_nocache(params, key, data)
@@ -74,6 +74,7 @@ def test_vnn_constant_across_configurations():
 
 
 # ── P2: Interaction layer optimisation ────────────────────────────────────────
+
 
 def test_interaction_layer_optimised_broadcast():
     """Verify the optimised interaction layer produces finite outputs."""
@@ -99,8 +100,10 @@ def test_interaction_layer_optimised_broadcast():
 
 # ── P3: pmap_with_donate helper ───────────────────────────────────────────────
 
+
 def test_pmap_with_donate_callable():
     """pmap_with_donate returns a decorator factory."""
+
     def dummy(x):
         return x + 1.0
 
@@ -113,10 +116,12 @@ def test_pmap_with_donate_callable():
 
 # ── P6: _to_float hoisted helper ─────────────────────────────────────────────
 
+
 def test_to_float_helper_works_on_scalars_and_arrays():
     """The hoisted _to_float handles both scalars and arrays."""
+
     def _to_float(arr):
-        if hasattr(arr, 'ndim') and arr.ndim > 0:
+        if hasattr(arr, "ndim") and arr.ndim > 0:
             return float(arr.ravel()[0])
         return float(arr)
 
