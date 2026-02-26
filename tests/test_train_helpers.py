@@ -215,7 +215,7 @@ def test_train_loop_with_stubbed_dependencies(monkeypatch, tmp_path):
     monkeypatch.setattr(
         train.constants,
         "pmap_with_donate",
-        lambda **kw: (lambda fn: fn),
+        lambda **kw: lambda fn: fn,
         raising=False,
     )
 

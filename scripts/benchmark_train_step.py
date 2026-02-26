@@ -87,7 +87,9 @@ def main() -> None:
         int(ndim),
     )
 
-    local_energy_fn = train_utils.make_local_energy_fn(apply_log, charges, spins, cfg, atoms=atoms)
+    local_energy_fn = train_utils.make_local_energy_fn(
+        apply_log, charges, spins, cfg, atoms=atoms
+    )
     loss_fn = loss.make_loss(
         apply_log,
         local_energy_fn,

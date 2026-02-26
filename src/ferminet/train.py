@@ -185,12 +185,14 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             lr = jnp.asarray(schedule(step_val))
             # Pack stats into a single array to reduce host-device transfer overhead.
             # Ensure all elements are scalar arrays before stacking.
-            stats = jnp.stack([
-                jnp.reshape(energy, ()),
-                jnp.reshape(variance, ()),
-                jnp.reshape(pmove_val, ()),
-                jnp.reshape(lr, ())
-            ])
+            stats = jnp.stack(
+                [
+                    jnp.reshape(energy, ()),
+                    jnp.reshape(variance, ()),
+                    jnp.reshape(pmove_val, ()),
+                    jnp.reshape(lr, ()),
+                ]
+            )
 
             is_finite = jnp.isfinite(energy)
             new_params = jax.tree_util.tree_map(
@@ -316,14 +318,22 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             )
 
         if (i + 1) % checkpoint_every == 0:
-            _last_host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
+            _last_host_params = jax.tree_util.tree_map(
+                lambda x: jax.device_get(x)[0], params
+            )
             _last_host_opt_state = jax.tree_util.tree_map(
                 lambda x: jax.device_get(x)[0], opt_state
             )
-            _last_host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
+            _last_host_data = jax.tree_util.tree_map(
+                lambda x: jax.device_get(x)[0], data
+            )
             _last_ckpt_step = i + 1
             checkpoint.save_checkpoint(
-                save_path, i + 1, _last_host_params, _last_host_opt_state, _last_host_data
+                save_path,
+                i + 1,
+                _last_host_params,
+                _last_host_opt_state,
+                _last_host_data,
             )
 
     # P4: Reuse cached host data if the last checkpoint covered the final step,
@@ -334,7 +344,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         host_data = _last_host_data
     else:
         host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
-        host_opt_state = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], opt_state)
+        host_opt_state = jax.tree_util.tree_map(
+            lambda x: jax.device_get(x)[0], opt_state
+        )
         host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
     return {
         "params": host_params,
