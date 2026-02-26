@@ -30,6 +30,20 @@ from ferminet.utils import devices as device_utils
 Array = jnp.ndarray
 ParamTree = types.ParamTree
 
+# ── H2: Persistent compilation cache ─────────────────────────────────────────
+# Caches XLA compilations to disk so subsequent runs skip the ~20s compile.
+import os as _os
+
+_cache_dir = _os.environ.get("JAX_CACHE_DIR", "/tmp/ferminet_jax_cache")
+jax.config.update("jax_compilation_cache_dir", _cache_dir)
+jax.config.update("jax_persistent_cache_min_entry_size_bytes", 0)
+jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+
+# ── H3: Allow TF32 matmul on Ampere+ GPUs for ~3x throughput ─────────────────
+# "default" uses TF32 for matmuls (19-bit effective precision, sufficient for VMC).
+# Use "highest" for full float32 if numerics are suspect.
+jax.config.update("jax_default_matmul_precision", "default")
+
 make_schedule = optimizers.make_schedule
 _prepare_system = train_utils.prepare_system
 _build_network = train_utils.build_network
@@ -79,7 +93,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
     init_fn, apply_log, _ = _build_network(cfg, atoms, charges, spins)
 
-    local_energy_fn = _make_local_energy_fn(apply_log, charges, spins, cfg)
+    local_energy_fn = _make_local_energy_fn(apply_log, charges, spins, cfg, atoms=atoms)
     loss_fn = loss.make_loss(
         apply_log,
         local_energy_fn,
@@ -181,7 +195,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     else:
 
         @jax.jit
-        @constants.pmap
+        @constants.pmap_with_donate(donate_argnums=(0, 1, 2, 3))
         def adam_step_fn(
             params: ParamTree,
             opt_state: Any,
@@ -223,13 +237,26 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     adapt_frequency = int(cfg_any.mcmc.adapt_frequency)
     save_path = cfg_any.log.save_path
 
+    # P6: Hoist _to_float helper out of the loop to avoid re-definition.
+    def _to_float(arr: Any) -> float:
+        if hasattr(arr, 'ndim') and arr.ndim > 0:
+            return float(arr.ravel()[0])
+        return float(arr)
+
+    # P4: Cache most recent host-side checkpoint data to avoid redundant
+    # device_get at the end of training.
+    _last_ckpt_step = -1
+    _last_host_params: Any = None
+    _last_host_opt_state: Any = None
+    _last_host_data: Any = None
+
     start = time.time()
     for i in range(step, iterations):
-        # Update width_arr in-place (JAX sees same traced array, preventing
-        # re-JIT).  The .at[...].set() returns a new array with the same
-        # shape/dtype, which is what JAX traces on.
+        # Update width_arr — broadcast_to avoids re-JIT by preserving
+        # shape/dtype across iterations.
         width_arr = jnp.broadcast_to(jnp.asarray(width), (device_count,))
-        step_array = jnp.full((device_count,), i, dtype=jnp.int32)
+        # P6: Use broadcast_to + set to avoid jnp.full per step.
+        step_array = jnp.broadcast_to(jnp.asarray(i, dtype=jnp.int32), (device_count,))
 
         if cfg_any.optim.optimizer == "kfac" and i % 100 == 0:
             jax.tree_util.tree_map(lambda x: x.block_until_ready(), opt_state)
@@ -242,11 +269,6 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
         if (i + 1) % print_every == 0:
             stats_host = jax.device_get(stats)
-
-            def _to_float(arr):
-                if arr.ndim > 0:
-                    return float(arr.ravel()[0])
-                return float(arr)
 
             energy_val = _to_float(stats_host.energy)
 
@@ -286,18 +308,26 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             )
 
         if (i + 1) % checkpoint_every == 0:
-            host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
-            host_opt_state = jax.tree_util.tree_map(
+            _last_host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
+            _last_host_opt_state = jax.tree_util.tree_map(
                 lambda x: jax.device_get(x)[0], opt_state
             )
-            host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
+            _last_host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
+            _last_ckpt_step = i + 1
             checkpoint.save_checkpoint(
-                save_path, i + 1, host_params, host_opt_state, host_data
+                save_path, i + 1, _last_host_params, _last_host_opt_state, _last_host_data
             )
 
-    host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
-    host_opt_state = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], opt_state)
-    host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
+    # P4: Reuse cached host data if the last checkpoint covered the final step,
+    # avoiding a redundant D2H transfer.
+    if _last_ckpt_step == iterations:
+        host_params = _last_host_params
+        host_opt_state = _last_host_opt_state
+        host_data = _last_host_data
+    else:
+        host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
+        host_opt_state = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], opt_state)
+        host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
     return {
         "params": host_params,
         "opt_state": host_opt_state,

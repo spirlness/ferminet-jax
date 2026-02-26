@@ -81,6 +81,7 @@ def make_local_energy_fn(
     charges: Array,
     spins: Tuple[int, int],
     cfg: ml_collections.ConfigDict,
+    atoms: Array | None = None,
 ) -> Callable[[ParamTree, jax.Array, types.FermiNetData], Array]:
     """Create batched local energy function."""
     cfg_any = cast(Any, cfg)
@@ -97,6 +98,7 @@ def make_local_energy_fn(
 
     laplacian_cfg = cfg_any.optim.get("laplacian", "default")
 
+    atoms_for_cache = jnp.asarray(atoms) if atoms is not None else None
     single_local_energy = hamiltonian.local_energy(
         apply_sign_log,
         charges=charges,
@@ -104,6 +106,7 @@ def make_local_energy_fn(
         use_scan=laplacian_cfg == "scan",
         complex_output=cfg_any.network.get("complex", False),
         laplacian_mode=laplacian_cfg,
+        atoms=atoms_for_cache,
     )
 
     def local_energy_fn(

@@ -195,6 +195,7 @@ def local_energy(
     use_scan: bool = False,
     complex_output: bool = False,
     laplacian_mode: str = "default",
+    atoms: jnp.ndarray | None = None,
 ) -> LocalEnergy:
     """Creates the local energy function E_L = T + V.
 
@@ -205,6 +206,10 @@ def local_energy(
         use_scan: Use scan for Laplacian (legacy; prefer *laplacian_mode*).
         complex_output: Complex-valued output.
         laplacian_mode: Laplacian strategy — see :func:`local_kinetic_energy`.
+        atoms: Atomic positions, shape ``(n_atoms, ndim)``.  When provided the
+            nuclear-nuclear repulsion ``V_nn`` is computed **once** at factory
+            time and captured as a closure constant, eliminating an O(n_atoms²)
+            computation per sample per step.
 
     Returns:
         LocalEnergy function.
@@ -214,6 +219,11 @@ def local_energy(
         f, use_scan, complex_output, laplacian_mode=laplacian_mode
     )
 
+    # Precompute V_nn once — nuclear coordinates are fixed during training.
+    _cached_v_nn: jnp.ndarray | None = None
+    if atoms is not None:
+        _cached_v_nn = potential_nuclear_nuclear(charges, atoms)
+
     def e_l(
         params: types.ParamTree,
         key: jax.Array,
@@ -221,9 +231,12 @@ def local_energy(
     ) -> tuple[jnp.ndarray, jnp.ndarray | None]:
         _ = key
         positions = cast(jnp.ndarray, data.positions)
-        atoms = cast(jnp.ndarray, data.atoms)
-        _, _, r_ae, r_ee = construct_input_features(positions, atoms)
-        potential = potential_energy(r_ae, r_ee, atoms, charges)
+        atoms_data = cast(jnp.ndarray, data.atoms)
+        _, _, r_ae, r_ee = construct_input_features(positions, atoms_data)
+        v_ee = potential_electron_electron(r_ee)
+        v_en = potential_electron_nuclear(charges, r_ae)
+        v_nn = _cached_v_nn if _cached_v_nn is not None else potential_nuclear_nuclear(charges, atoms_data)
+        potential = v_ee + v_en + v_nn
         kinetic = kinetic_fn(params, data)
         total_energy = potential + kinetic
         return total_energy, None

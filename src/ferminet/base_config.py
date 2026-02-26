@@ -104,6 +104,7 @@ def default() -> ml_collections.ConfigDict:
                 "envelope_type": "isotropic",
                 "full_det": True,
                 "use_slogdet": False,
+                "precision": "float32",
                 "ferminet": {
                     "hidden_dims": ((256, 32), (256, 32), (256, 32), (256, 32)),
                     # Filled with FieldReferences after cfg construction.

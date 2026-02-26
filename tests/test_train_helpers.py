@@ -212,6 +212,12 @@ def test_train_loop_with_stubbed_dependencies(monkeypatch, tmp_path):
     monkeypatch.setattr(train.loss, "make_loss", stub_make_loss)
     monkeypatch.setattr(train.mcmc, "make_mcmc_step", stub_mcmc_step)
     monkeypatch.setattr(train.constants, "pmap", lambda fn, *a, **k: fn, raising=False)
+    monkeypatch.setattr(
+        train.constants,
+        "pmap_with_donate",
+        lambda **kw: (lambda fn: fn),
+        raising=False,
+    )
 
     def fake_pmean(x):
         return jax.tree_util.tree_map(

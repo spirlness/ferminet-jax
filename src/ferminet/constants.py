@@ -19,6 +19,22 @@ def pmap(
     return pmap_fn(fn, axis_name=PMAP_AXIS_NAME, *args, **kwargs)
 
 
+def pmap_with_donate(
+    donate_argnums: tuple[int, ...] = (),
+) -> Callable[..., Callable[..., object]]:
+    """Decorator factory: ``@pmap_with_donate(donate_argnums=(...))``."""
+
+    def wrapper(fn: Callable[..., object]) -> Callable[..., object]:
+        pmap_fn = cast(Callable[..., Callable[..., object]], jax.pmap)
+        return pmap_fn(
+            fn,
+            axis_name=PMAP_AXIS_NAME,
+            donate_argnums=donate_argnums,
+        )
+
+    return wrapper
+
+
 def pmean(values: Array) -> Array:
     """Average values across all devices."""
     pmean_fn = cast(Callable[[Array, str], Array], jax.lax.pmean)

@@ -267,20 +267,29 @@ def _apply_interaction_layer(
     use_residual: bool,
 ) -> tuple[Array, Array]:
     """Apply a single interaction layer to one- and two-electron streams."""
-    h_one_mean = jnp.mean(h_one, axis=0, keepdims=True)
-    h_one_mean = jnp.broadcast_to(h_one_mean, h_one.shape)
+    # Compute mean and broadcast in one step — avoids materialising the
+    # intermediate (1, feat) array before broadcast.
+    h_one_mean = jnp.broadcast_to(
+        jnp.mean(h_one, axis=0, keepdims=True), h_one.shape
+    )
     h_two_mean = _masked_mean(h_two, mask)
 
     h_one_input = jnp.concatenate([h_one, h_one_mean, h_two_mean], axis=-1)
     one_params = params[_KEY_ONE]
     two_params = params[_KEY_TWO]
-    one_bias = one_params[_KEY_B] if _KEY_B in one_params else None
-    two_bias = two_params[_KEY_B] if _KEY_B in two_params else None
+
+    # H1: Cast weights/biases to match activation dtype for Tensor Core matmul.
+    _dt = h_one_input.dtype
+    one_w = one_params[_KEY_W].astype(_dt)
+    two_w = two_params[_KEY_W].astype(_dt)
+    one_bias = one_params[_KEY_B].astype(_dt) if _KEY_B in one_params else None
+    two_bias = two_params[_KEY_B].astype(_dt) if _KEY_B in two_params else None
+
     h_one_new = activation(
-        network_blocks.linear_layer(h_one_input, one_params[_KEY_W], one_bias)
+        network_blocks.linear_layer(h_one_input, one_w, one_bias)
     )
     h_two_new = activation(
-        network_blocks.linear_layer(h_two, two_params[_KEY_W], two_bias)
+        network_blocks.linear_layer(h_two, two_w, two_bias)
     )
 
     if use_residual and h_one_new.shape == h_one.shape:
@@ -527,6 +536,17 @@ def make_fermi_net(
     envelope_type = _envelope_type_from_cfg(cfg)
     envelope_fn = _make_envelope_from_type(envelope_type)
 
+    # H1: Mixed precision — use bfloat16 for interaction layers on GPU.
+    network_cfg = _cfg_section(cfg, "network")
+    _precision_str = "float32"
+    if network_cfg is not None:
+        try:
+            _precision_str = str(network_cfg["precision"])
+        except (KeyError, TypeError):
+            pass
+    use_bf16 = _precision_str.lower() in ("bfloat16", "bf16", "mixed")
+    compute_dtype = jnp.bfloat16 if use_bf16 else jnp.float32
+
     one_feat_dim = n_atoms * (ndim + 1) + n_atoms + 1
     two_feat_dim = ndim + 2
     mask = _electron_electron_mask(n_electrons)
@@ -603,6 +623,11 @@ def make_fermi_net(
         h_one = _augment_one_electron_features(h_one, r_ae_norm, spins_in, charges_in)
         h_two = _construct_two_electron_features(r_ee, r_ee_norm, spins_in)
 
+        # H1: Cast to bfloat16 for Tensor Core utilisation in interaction layers.
+        if use_bf16:
+            h_one = h_one.astype(jnp.bfloat16)
+            h_two = h_two.astype(jnp.bfloat16)
+
         layers = cast(Sequence[Mapping[str, Mapping[str, Array]]], params_map[_KEY_LAYERS])
         for layer_index, layer_params in enumerate(layers):
             h_one, h_two = _apply_interaction_layer(
@@ -613,6 +638,11 @@ def make_fermi_net(
                 activation,
                 use_residual=layer_index > 0,
             )
+
+        # H1: Cast back to float32 before orbital + determinant computations
+        # for numerical stability (slogdet is precision-sensitive).
+        if use_bf16:
+            h_one = h_one.astype(jnp.float32)
 
         h_up = h_one[:n_up]
         h_down = h_one[n_up:]
