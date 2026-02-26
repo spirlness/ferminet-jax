@@ -269,9 +269,7 @@ def _apply_interaction_layer(
     """Apply a single interaction layer to one- and two-electron streams."""
     # Compute mean and broadcast in one step — avoids materialising the
     # intermediate (1, feat) array before broadcast.
-    h_one_mean = jnp.broadcast_to(
-        jnp.mean(h_one, axis=0, keepdims=True), h_one.shape
-    )
+    h_one_mean = jnp.broadcast_to(jnp.mean(h_one, axis=0, keepdims=True), h_one.shape)
     h_two_mean = _masked_mean(h_two, mask)
 
     h_one_input = jnp.concatenate([h_one, h_one_mean, h_two_mean], axis=-1)
@@ -285,12 +283,8 @@ def _apply_interaction_layer(
     one_bias = one_params[_KEY_B].astype(_dt) if _KEY_B in one_params else None
     two_bias = two_params[_KEY_B].astype(_dt) if _KEY_B in two_params else None
 
-    h_one_new = activation(
-        network_blocks.linear_layer(h_one_input, one_w, one_bias)
-    )
-    h_two_new = activation(
-        network_blocks.linear_layer(h_two, two_w, two_bias)
-    )
+    h_one_new = activation(network_blocks.linear_layer(h_one_input, one_w, one_bias))
+    h_two_new = activation(network_blocks.linear_layer(h_two, two_w, two_bias))
 
     if use_residual and h_one_new.shape == h_one.shape:
         h_one_new = h_one_new + h_one
@@ -545,7 +539,7 @@ def make_fermi_net(
         except (KeyError, TypeError):
             pass
     use_bf16 = _precision_str.lower() in ("bfloat16", "bf16", "mixed")
-    compute_dtype = jnp.bfloat16 if use_bf16 else jnp.float32
+    # compute_dtype = jnp.bfloat16 if use_bf16 else jnp.float32
 
     one_feat_dim = n_atoms * (ndim + 1) + n_atoms + 1
     two_feat_dim = ndim + 2
@@ -628,7 +622,9 @@ def make_fermi_net(
             h_one = h_one.astype(jnp.bfloat16)
             h_two = h_two.astype(jnp.bfloat16)
 
-        layers = cast(Sequence[Mapping[str, Mapping[str, Array]]], params_map[_KEY_LAYERS])
+        layers = cast(
+            Sequence[Mapping[str, Mapping[str, Array]]], params_map[_KEY_LAYERS]
+        )
         for layer_index, layer_params in enumerate(layers):
             h_one, h_two = _apply_interaction_layer(
                 layer_params,
