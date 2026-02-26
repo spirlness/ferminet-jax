@@ -13,20 +13,17 @@ from ferminet.configs import helium
 from ferminet.constants import pmap_with_donate
 from ferminet.hamiltonian import (
     local_energy as make_local_energy,
-    potential_electron_electron,
-    potential_electron_nuclear,
+)
+from ferminet.hamiltonian import (
     potential_nuclear_nuclear,
-    potential_energy,
-    construct_input_features,
 )
 from ferminet.networks import (
-    make_fermi_net,
     _apply_interaction_layer,
-    _init_interaction_layer,
     _electron_electron_mask,
+    _init_interaction_layer,
+    make_fermi_net,
 )
 from ferminet.types import FermiNetData
-
 
 # ── P1: Precomputed V_nn ──────────────────────────────────────────────────────
 
@@ -34,7 +31,6 @@ def test_precomputed_vnn_matches_per_step():
     """V_nn precomputed in factory matches per-step recomputation."""
     atoms = jnp.array([[0.0, 0.0, 0.0], [1.4, 0.0, 0.0]])
     charges = jnp.array([1.0, 1.0])
-    v_nn_expected = potential_nuclear_nuclear(charges, atoms)
 
     nspins = (1, 1)
     cfg = helium.get_config()

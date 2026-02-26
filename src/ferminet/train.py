@@ -32,7 +32,7 @@ ParamTree = types.ParamTree
 
 # ── H2: Persistent compilation cache ─────────────────────────────────────────
 # Caches XLA compilations to disk so subsequent runs skip the ~20s compile.
-import os as _os
+import os as _os  # noqa: E402
 
 _cache_dir = _os.environ.get("JAX_CACHE_DIR", "/tmp/ferminet_jax_cache")
 jax.config.update("jax_compilation_cache_dir", _cache_dir)
