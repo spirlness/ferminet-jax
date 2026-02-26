@@ -184,6 +184,8 @@ FermiNet 将多电子波函数表示为多个 Slater 行列式的加权和：
 
 架构图源码：[docs/assets/architecture.dot](docs/assets/architecture.dot)
 
+![FermiNet Architecture](docs/assets/architecture.png)
+
 ```mermaid
 flowchart TD
     A[输入: 电子坐标 x<br/>自旋 spins<br/>原子 atoms<br/>核电荷 charges] --> B[几何特征构造<br/>r_ae / r_ee 与距离范数]
