@@ -6,6 +6,10 @@
 from __future__ import annotations
 
 import inspect
+
+# ── H2: Persistent compilation cache ─────────────────────────────────────────
+# Caches XLA compilations to disk so subsequent runs skip the ~20s compile.
+import os as _os
 import time
 from collections.abc import Mapping
 from typing import Any, cast
@@ -27,17 +31,13 @@ from ferminet import (
 )
 from ferminet.utils import devices as device_utils
 
-Array = jnp.ndarray
-ParamTree = types.ParamTree
-
-# ── H2: Persistent compilation cache ─────────────────────────────────────────
-# Caches XLA compilations to disk so subsequent runs skip the ~20s compile.
-import os as _os
-
 _cache_dir = _os.environ.get("JAX_CACHE_DIR", "/tmp/ferminet_jax_cache")
 jax.config.update("jax_compilation_cache_dir", _cache_dir)
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", 0)
 jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+
+Array = jnp.ndarray
+ParamTree = types.ParamTree
 
 # ── H3: Allow TF32 matmul on Ampere+ GPUs for ~3x throughput ─────────────────
 # "default" uses TF32 for matmuls (19-bit effective precision, sufficient for VMC).
