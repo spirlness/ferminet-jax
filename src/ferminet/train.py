@@ -32,7 +32,7 @@ ParamTree = types.ParamTree
 
 # ── H2: Persistent compilation cache ─────────────────────────────────────────
 # Caches XLA compilations to disk so subsequent runs skip the ~20s compile.
-import os as _os
+import os as _os  # noqa: E402
 
 _cache_dir = _os.environ.get("JAX_CACHE_DIR", "/tmp/ferminet_jax_cache")
 jax.config.update("jax_compilation_cache_dir", _cache_dir)
@@ -53,6 +53,12 @@ _restore_checkpoint = train_utils.restore_checkpoint
 _shard_array = device_utils.shard_array
 _shard_data = device_utils.shard_data
 _p_split = device_utils.p_split
+
+# Constants for stats array indices
+ENERGY = 0
+VARIANCE = 1
+PMOVE = 2
+LEARNING_RATE = 3
 
 
 def _filter_kwargs(fn: Any, kwargs: Mapping[str, Any]) -> dict[str, Any]:
@@ -152,7 +158,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             key: jax.Array,
             step: jnp.ndarray,
             mcmc_width: Any,
-        ) -> tuple[Any, Any, Any, Any, train_utils.StepStats]:
+        ) -> tuple[Any, Any, Any, Any, jax.Array]:
             mcmc_keys, loss_keys = _p_split(key)
             new_data, pmove = pmapped_mcmc_step(params, data, mcmc_keys, mcmc_width)
 
@@ -177,8 +183,13 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             pmove_val = pmove[0] if hasattr(pmove, "__getitem__") else pmove
             step_val = step[0] if hasattr(step, "__getitem__") else step
             lr = jnp.asarray(schedule(step_val))
-            step_stats = train_utils.StepStats(
-                energy=energy, variance=variance, pmove=pmove_val, learning_rate=lr
+            stats = jnp.stack(
+                [
+                    jnp.reshape(energy, ()),
+                    jnp.reshape(variance, ()),
+                    jnp.reshape(pmove_val, ()),
+                    jnp.reshape(lr, ()),
+                ]
             )
 
             is_finite = jnp.isfinite(energy)
@@ -189,7 +200,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 lambda p, np: jnp.where(is_finite, np, p), opt_state_old, new_opt_state
             )
 
-            return new_params, new_opt_state, new_data, loss_keys, step_stats
+            return new_params, new_opt_state, new_data, loss_keys, stats
 
         step_fn = kfac_step_fn
     else:
@@ -203,7 +214,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             key: jax.Array,
             step: jnp.ndarray,
             mcmc_width: Any,
-        ) -> tuple[Any, Any, Any, Any, train_utils.StepStats]:
+        ) -> tuple[Any, Any, Any, Any, jax.Array]:
             key, mcmc_key, loss_key = jax.random.split(key, 3)
             new_data, pmove = mcmc_step(params, data, mcmc_key, mcmc_width)
 
@@ -215,8 +226,13 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             variance = constants.pmean(aux.variance)
             pmove = constants.pmean(pmove)
             lr = jnp.asarray(schedule(step))
-            stats = train_utils.StepStats(
-                energy=energy, variance=variance, pmove=pmove, learning_rate=lr
+            stats = jnp.stack(
+                [
+                    jnp.reshape(energy, ()),
+                    jnp.reshape(variance, ()),
+                    jnp.reshape(pmove, ()),
+                    jnp.reshape(lr, ()),
+                ]
             )
 
             is_finite = jnp.isfinite(energy)
@@ -239,7 +255,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
     # P6: Hoist _to_float helper out of the loop to avoid re-definition.
     def _to_float(arr: Any) -> float:
-        if hasattr(arr, 'ndim') and arr.ndim > 0:
+        if hasattr(arr, "ndim") and arr.ndim > 0:
             return float(arr.ravel()[0])
         return float(arr)
 
@@ -269,16 +285,18 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
         if (i + 1) % print_every == 0:
             stats_host = jax.device_get(stats)
+            if stats_host.ndim == 2:
+                stats_host = stats_host[0]
 
-            energy_val = _to_float(stats_host.energy)
+            energy_val = _to_float(stats_host[ENERGY])
 
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
                     energy=energy_val,
-                    variance=_to_float(stats_host.variance),
-                    pmove=_to_float(stats_host.pmove),
-                    learning_rate=_to_float(stats_host.learning_rate),
+                    variance=_to_float(stats_host[VARIANCE]),
+                    pmove=_to_float(stats_host[PMOVE]),
+                    learning_rate=_to_float(stats_host[LEARNING_RATE]),
                 )
                 wall = time.time() - start
                 train_utils.log_stats(i + 1, log_stats, wall, width)
@@ -287,16 +305,20 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
             log_stats = train_utils.StepStats(
                 energy=energy_val,
-                variance=_to_float(stats_host.variance),
-                pmove=_to_float(stats_host.pmove),
-                learning_rate=_to_float(stats_host.learning_rate),
+                variance=_to_float(stats_host[VARIANCE]),
+                pmove=_to_float(stats_host[PMOVE]),
+                learning_rate=_to_float(stats_host[LEARNING_RATE]),
             )
             wall = time.time() - start
             train_utils.log_stats(i + 1, log_stats, wall, width)
             start = time.time()
 
         if (i + 1) % adapt_frequency == 0:
-            pmove_value = _to_host(stats.pmove)
+            if stats.ndim == 2:
+                pmove_ref = stats[0, PMOVE]
+            else:
+                pmove_ref = stats[PMOVE]
+            pmove_value = _to_host(pmove_ref)
             width, pmoves = mcmc.update_mcmc_width(
                 i + 1,
                 width,
@@ -308,14 +330,22 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             )
 
         if (i + 1) % checkpoint_every == 0:
-            _last_host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
+            _last_host_params = jax.tree_util.tree_map(
+                lambda x: jax.device_get(x)[0], params
+            )
             _last_host_opt_state = jax.tree_util.tree_map(
                 lambda x: jax.device_get(x)[0], opt_state
             )
-            _last_host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
+            _last_host_data = jax.tree_util.tree_map(
+                lambda x: jax.device_get(x)[0], data
+            )
             _last_ckpt_step = i + 1
             checkpoint.save_checkpoint(
-                save_path, i + 1, _last_host_params, _last_host_opt_state, _last_host_data
+                save_path,
+                i + 1,
+                _last_host_params,
+                _last_host_opt_state,
+                _last_host_data,
             )
 
     # P4: Reuse cached host data if the last checkpoint covered the final step,
@@ -326,7 +356,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         host_data = _last_host_data
     else:
         host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
-        host_opt_state = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], opt_state)
+        host_opt_state = jax.tree_util.tree_map(
+            lambda x: jax.device_get(x)[0], opt_state
+        )
         host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
     return {
         "params": host_params,
