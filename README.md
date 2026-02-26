@@ -184,6 +184,10 @@ FermiNet 将多电子波函数表示为多个 Slater 行列式的加权和：
 
 架构图源码：[docs/assets/architecture.dot](docs/assets/architecture.dot)
 
+### AI 生成概念图 (Gemini 3 Pro Image)
+![FermiNet Architecture Concept](docs/assets/ferminet_architecture_ai.png)
+
+### 模块结构图 (Graphviz)
 ![FermiNet Architecture](docs/assets/architecture.png)
 
 ```mermaid
