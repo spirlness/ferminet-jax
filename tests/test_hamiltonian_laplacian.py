@@ -1,6 +1,5 @@
 """Tests for the forward-over-reverse Laplacian mode in hamiltonian.py."""
 
-import jax
 import jax.numpy as jnp
 
 from ferminet import hamiltonian, types

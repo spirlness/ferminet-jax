@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import argparse
 import importlib
+
+# ── Persistent compilation cache + TF32 matmul ──────────────────────────────
+import os as _os
 import statistics
 import time
 from typing import Any, cast
@@ -20,16 +23,20 @@ from typing import Any, cast
 import jax
 import jax.numpy as jnp
 
-# ── Persistent compilation cache + TF32 matmul ──────────────────────────────
-import os as _os
-
 _cache_dir = _os.environ.get("JAX_CACHE_DIR", "/tmp/ferminet_jax_cache")
 jax.config.update("jax_compilation_cache_dir", _cache_dir)
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", 0)
 jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 jax.config.update("jax_default_matmul_precision", "default")
 
-from ferminet import base_config, constants, loss, mcmc, optimizers, train_utils
+from ferminet import (  # noqa: E402
+    base_config,
+    constants,
+    loss,
+    mcmc,
+    optimizers,
+    train_utils,
+)
 
 
 def _load_config(name: str):
