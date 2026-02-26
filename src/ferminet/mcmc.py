@@ -31,11 +31,6 @@ def _fori_loop(
     return fori_loop(lower, upper, body_fun, init_val)
 
 
-def _split_key(key: jax.Array) -> tuple[jax.Array, jax.Array]:
-    keys = jax.random.split(key)
-    return keys[0], keys[1]
-
-
 def _asarray_data(
     data: FermiNetData,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
@@ -131,7 +126,6 @@ def mh_update(
         stddev_arr = jnp.asarray(stddev)
         if stddev_arr.ndim >= 1 and x1.ndim == 2:
             # stddev is per-electron, x1 is (batch, nelec*ndim)
-            nelec = stddev_arr.shape[0]
             stddev_broad = jnp.repeat(stddev_arr, ndim)[None, :]
         else:
             stddev_broad = stddev_arr
