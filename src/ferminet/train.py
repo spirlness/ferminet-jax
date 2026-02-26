@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import inspect
+import os as _os
 import time
 from collections.abc import Mapping
 from typing import Any, cast
@@ -32,8 +33,6 @@ ParamTree = types.ParamTree
 
 # ── H2: Persistent compilation cache ─────────────────────────────────────────
 # Caches XLA compilations to disk so subsequent runs skip the ~20s compile.
-import os as _os
-
 _cache_dir = _os.environ.get("JAX_CACHE_DIR", "/tmp/ferminet_jax_cache")
 jax.config.update("jax_compilation_cache_dir", _cache_dir)
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", 0)
