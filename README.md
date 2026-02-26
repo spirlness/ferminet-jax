@@ -192,23 +192,23 @@ FermiNet 将多电子波函数表示为多个 Slater 行列式的加权和：
 
 ```mermaid
 flowchart TD
-    A[输入: 电子坐标 x<br/>自旋 spins<br/>原子 atoms<br/>核电荷 charges] --> B[几何特征构造<br/>r_ae / r_ee 与距离范数]
-    B --> C[单电子特征 h_one<br/>含 charge 通道 + spin 通道]
-    B --> D[双电子特征 h_two<br/>含 same-spin 通道]
+    A["输入: 电子坐标 x<br/>自旋 spins<br/>原子 atoms<br/>核电荷 charges"] --> B["几何特征构造<br/>r_ae / r_ee 与距离范数"]
+    B --> C["单电子特征 h_one<br/>含 charge 通道 + spin 通道"]
+    B --> D["双电子特征 h_two<br/>含 same-spin 通道"]
 
-    C --> E[交互层 Block 1]
+    C --> E["交互层 Block 1"]
     D --> E
-    E --> F[交互层 Block 2~N<br/>残差连接]
-    F --> G[按自旋分流<br/>h_up / h_down]
+    E --> F["交互层 Block 2~N<br/>残差连接"]
+    F --> G["按自旋分流<br/>h_up / h_down"]
 
-    G --> H[轨道层 up/down]
-    H --> I[多行列式组合<br/>det(up) × det(down)]
+    G --> H["轨道层 up/down"]
+    H --> I["多行列式组合<br/>det(up) × det(down)"]
 
-    B --> J[Envelope 分支<br/>isotropic / diagonal / full]
-    J --> K[log envelope]
+    B --> J["Envelope 分支<br/>isotropic / diagonal / full"]
+    J --> K["log envelope"]
 
-    I --> L[log_det]
-    L --> M[log|psi| = log_det + log_env]
+    I --> L["log_det"]
+    L --> M["log|psi| = log_det + log_env"]
     K --> M
 ```
 
