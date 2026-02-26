@@ -235,7 +235,11 @@ def local_energy(
         _, _, r_ae, r_ee = construct_input_features(positions, atoms_data)
         v_ee = potential_electron_electron(r_ee)
         v_en = potential_electron_nuclear(charges, r_ae)
-        v_nn = _cached_v_nn if _cached_v_nn is not None else potential_nuclear_nuclear(charges, atoms_data)
+        v_nn = (
+            _cached_v_nn
+            if _cached_v_nn is not None
+            else potential_nuclear_nuclear(charges, atoms_data)
+        )
         potential = v_ee + v_en + v_nn
         kinetic = kinetic_fn(params, data)
         total_energy = potential + kinetic

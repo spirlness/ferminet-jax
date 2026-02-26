@@ -6,10 +6,6 @@
 from __future__ import annotations
 
 import inspect
-
-# ── H2: Persistent compilation cache ─────────────────────────────────────────
-# Caches XLA compilations to disk so subsequent runs skip the ~20s compile.
-import os as _os
 import time
 from collections.abc import Mapping
 from typing import Any, cast
@@ -31,12 +27,6 @@ from ferminet import (
 )
 from ferminet.utils import devices as device_utils
 
-_cache_dir = _os.environ.get("JAX_CACHE_DIR", "/tmp/ferminet_jax_cache")
-jax.config.update("jax_compilation_cache_dir", _cache_dir)
-jax.config.update("jax_persistent_cache_min_entry_size_bytes", 0)
-jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
-
-# ── H3: Allow TF32 matmul on Ampere+ GPUs for ~3x throughput ─────────────────
 Array = jnp.ndarray
 ParamTree = types.ParamTree
 
@@ -45,9 +35,6 @@ ENERGY = 0
 VARIANCE = 1
 PMOVE = 2
 LEARNING_RATE = 3
-# "default" uses TF32 for matmuls (19-bit effective precision, sufficient for VMC).
-# Use "highest" for full float32 if numerics are suspect.
-jax.config.update("jax_default_matmul_precision", "default")
 
 make_schedule = optimizers.make_schedule
 _prepare_system = train_utils.prepare_system
@@ -240,7 +227,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
     # P6: Hoist _to_float helper out of the loop to avoid re-definition.
     def _to_float(arr: Any) -> float:
-        if hasattr(arr, 'ndim') and arr.ndim > 0:
+        if hasattr(arr, "ndim") and arr.ndim > 0:
             return float(arr.ravel()[0])
         return float(arr)
 
@@ -314,14 +301,22 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             )
 
         if (i + 1) % checkpoint_every == 0:
-            _last_host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
+            _last_host_params = jax.tree_util.tree_map(
+                lambda x: jax.device_get(x)[0], params
+            )
             _last_host_opt_state = jax.tree_util.tree_map(
                 lambda x: jax.device_get(x)[0], opt_state
             )
-            _last_host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
+            _last_host_data = jax.tree_util.tree_map(
+                lambda x: jax.device_get(x)[0], data
+            )
             _last_ckpt_step = i + 1
             checkpoint.save_checkpoint(
-                save_path, i + 1, _last_host_params, _last_host_opt_state, _last_host_data
+                save_path,
+                i + 1,
+                _last_host_params,
+                _last_host_opt_state,
+                _last_host_data,
             )
 
     # P4: Reuse cached host data if the last checkpoint covered the final step,
@@ -332,7 +327,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         host_data = _last_host_data
     else:
         host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
-        host_opt_state = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], opt_state)
+        host_opt_state = jax.tree_util.tree_map(
+            lambda x: jax.device_get(x)[0], opt_state
+        )
         host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
     return {
         "params": host_params,
