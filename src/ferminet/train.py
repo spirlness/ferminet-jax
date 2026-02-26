@@ -30,15 +30,9 @@ from ferminet.utils import devices as device_utils
 Array = jnp.ndarray
 ParamTree = types.ParamTree
 
-# Constants for stats array indices
-ENERGY = 0
-VARIANCE = 1
-PMOVE = 2
-LEARNING_RATE = 3
-
 # ── H2: Persistent compilation cache ─────────────────────────────────────────
 # Caches XLA compilations to disk so subsequent runs skip the ~20s compile.
-import os as _os
+import os as _os  # noqa: E402
 
 _cache_dir = _os.environ.get("JAX_CACHE_DIR", "/tmp/ferminet_jax_cache")
 jax.config.update("jax_compilation_cache_dir", _cache_dir)
@@ -49,6 +43,12 @@ jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 # "default" uses TF32 for matmuls (19-bit effective precision, sufficient for VMC).
 # Use "highest" for full float32 if numerics are suspect.
 jax.config.update("jax_default_matmul_precision", "default")
+
+# Constants for stats array indices
+ENERGY = 0
+VARIANCE = 1
+PMOVE = 2
+LEARNING_RATE = 3
 
 make_schedule = optimizers.make_schedule
 _prepare_system = train_utils.prepare_system

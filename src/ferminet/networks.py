@@ -539,7 +539,6 @@ def make_fermi_net(
         except (KeyError, TypeError):
             pass
     use_bf16 = _precision_str.lower() in ("bfloat16", "bf16", "mixed")
-    compute_dtype = jnp.bfloat16 if use_bf16 else jnp.float32
 
     one_feat_dim = n_atoms * (ndim + 1) + n_atoms + 1
     two_feat_dim = ndim + 2
