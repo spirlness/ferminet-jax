@@ -47,7 +47,7 @@ def test_log_prob_gaussian_and_width_update_behaviour():
     log_prob = mcmc._log_prob_gaussian(x, mu, sigma)
     assert log_prob.shape == (1,)
 
-    width, _ = mcmc.update_mcmc_width(
+    width, pmoves = mcmc.update_mcmc_width(
         t=0,
         width=0.1,
         adapt_frequency=20,
@@ -56,13 +56,26 @@ def test_log_prob_gaussian_and_width_update_behaviour():
         pmove_max=0.6,
         pmove_min=0.5,
     )
+    assert jnp.isclose(jnp.asarray(width), jnp.asarray(0.1))
+    assert pmoves[0] == jnp.asarray(0.9)
+
+    width, _ = mcmc.update_mcmc_width(
+        t=20,
+        width=0.1,
+        adapt_frequency=20,
+        pmove=0.9,
+        pmoves=jnp.full((20,), 0.9),
+        pmove_max=0.6,
+        pmove_min=0.5,
+    )
     assert width > 0.1
+
     width_cool, _ = mcmc.update_mcmc_width(
-        t=0,
+        t=20,
         width=10.0,
         adapt_frequency=20,
         pmove=0.1,
-        pmoves=jnp.zeros((20,)),
+        pmoves=jnp.full((20,), 0.1),
     )
     assert width_cool < 10.0
 

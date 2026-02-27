@@ -254,13 +254,19 @@ def update_mcmc_width(
     width_max: float = 10.0,
 ) -> tuple[float, jnp.ndarray]:
     """Adapts MCMC step width based on acceptance rate."""
-    target = (pmove_max + pmove_min) / 2.0
-    eta = 0.5
-    max_log_change = 0.4
+    if adapt_frequency <= 0 or pmoves.size == 0:
+        return width, pmoves
 
-    log_width = jnp.log(width)
-    delta = jnp.clip(eta * (pmove - target), -max_log_change, max_log_change)
-    log_width = log_width + delta
-    width = float(jnp.clip(jnp.exp(log_width), width_min, width_max))
+    idx = t % adapt_frequency
+    idx = int(jnp.clip(jnp.asarray(idx), 0, pmoves.size - 1))
+    pmoves = pmoves.at[idx].set(jnp.asarray(pmove, dtype=pmoves.dtype))
 
+    if t > 0 and idx == 0:
+        mean_pmove = float(jnp.mean(pmoves))
+        if mean_pmove > pmove_max:
+            width *= 1.1
+        elif mean_pmove < pmove_min:
+            width /= 1.1
+
+    width = float(jnp.clip(jnp.asarray(width), width_min, width_max))
     return width, pmoves
