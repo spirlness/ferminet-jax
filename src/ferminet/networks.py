@@ -198,7 +198,7 @@ def _construct_one_electron_features(r_ae: Array, r_ae_norm: Array) -> Array:
 def _augment_one_electron_features(
     h_one: Array,
     r_ae_norm: Array,
-    spin_labels: Array,
+    spin_channel: Array,
     charges: Array,
 ) -> Array:
     """Append spin- and charge-aware channels to one-electron features."""
@@ -206,16 +206,14 @@ def _augment_one_electron_features(
         charges[None, :, None], r_ae_norm[..., None].shape
     )
     charge_channels = charge_channels.reshape(r_ae_norm.shape[0], -1)
-    spin_channel = (2.0 * jnp.asarray(spin_labels) - 1.0)[:, None]
     return jnp.concatenate([h_one, charge_channels, spin_channel], axis=-1)
 
 
 def _construct_two_electron_features(
-    r_ee: Array, r_ee_norm: Array, spin_labels: Array
+    r_ee: Array, r_ee_norm: Array, same_spin_mask: Array
 ) -> Array:
     """Construct two-electron features from electron-electron vectors."""
-    spin_labels = jnp.asarray(spin_labels)
-    same_spin = (spin_labels[:, None] == spin_labels[None, :]).astype(r_ee.dtype)
+    same_spin = same_spin_mask.astype(r_ee.dtype)
     return jnp.concatenate([r_ee, r_ee_norm[..., None], same_spin[..., None]], axis=-1)
 
 
@@ -595,11 +593,15 @@ def make_fermi_net(
 
     mask = _electron_electron_mask(n_electrons)
 
+    # Precompute spin features
+    spin_labels_const = jnp.concatenate([jnp.zeros(n_up), jnp.ones(n_down)])
+    spin_channel_const = (2.0 * spin_labels_const - 1.0)[:, None]
+    same_spin_mask_const = spin_labels_const[:, None] == spin_labels_const[None, :]
+
     def _forward_single(
         params: ParamMapping,
         electrons_single: Array,
         atoms_in: Array,
-        spins_in: Array,
         charges_in: Array,
     ) -> tuple[Array, Array, tuple[Array, Array]]:
         """Forward pass for a single configuration."""
@@ -612,8 +614,10 @@ def make_fermi_net(
         r_ee_norm = jnp.sqrt(jnp.sum(r_ee**2, axis=-1) + EPS)
 
         h_one = _construct_one_electron_features(r_ae, r_ae_norm)
-        h_one = _augment_one_electron_features(h_one, r_ae_norm, spins_in, charges_in)
-        h_two = _construct_two_electron_features(r_ee, r_ee_norm, spins_in)
+        h_one = _augment_one_electron_features(
+            h_one, r_ae_norm, spin_channel_const, charges_in
+        )
+        h_two = _construct_two_electron_features(r_ee, r_ee_norm, same_spin_mask_const)
 
         # H1: Cast to bfloat16 for Tensor Core utilisation in interaction layers.
         if use_bf16:
@@ -678,12 +682,12 @@ def make_fermi_net(
         params_map: ParamMapping = cast(ParamMapping, params)
         atoms_norm = _normalize_atoms(atoms, ndim)
         electrons_norm = _normalize_electrons(electrons, n_electrons, ndim)
-        spins_norm = _normalize_spin_labels(spins, n_electrons)
+        _normalize_spin_labels(spins, n_electrons)
         charges_norm = _normalize_charges(charges, n_atoms)
 
         if electrons_norm.ndim == 2:
             sign, log_psi, _ = _forward_single(
-                params_map, electrons_norm, atoms_norm, spins_norm, charges_norm
+                params_map, electrons_norm, atoms_norm, charges_norm
             )
             return sign, log_psi
 
@@ -693,7 +697,6 @@ def make_fermi_net(
                     params_map,
                     e,
                     atoms_norm,
-                    spins_norm,
                     charges_norm,
                 )[:2]
             )
@@ -713,12 +716,12 @@ def make_fermi_net(
         params_map: ParamMapping = cast(ParamMapping, params)
         atoms_norm = _normalize_atoms(atoms, ndim)
         electrons_norm = _normalize_electrons(pos, n_electrons, ndim)
-        spins_norm = _normalize_spin_labels(spins, n_electrons)
+        _normalize_spin_labels(spins, n_electrons)
         charges_norm = _normalize_charges(charges, n_atoms)
 
         if electrons_norm.ndim == 2:
             _, _, (orb_up, orb_down) = _forward_single(
-                params_map, electrons_norm, atoms_norm, spins_norm, charges_norm
+                params_map, electrons_norm, atoms_norm, charges_norm
             )
             return (orb_up, orb_down)
 
@@ -728,7 +731,6 @@ def make_fermi_net(
                     params_map,
                     e,
                     atoms_norm,
-                    spins_norm,
                     charges_norm,
                 )[2]
             )
