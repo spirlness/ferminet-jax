@@ -276,12 +276,13 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
         params, opt_state = new_params, new_opt_state
 
-        if (i + 1) % print_every == 0:
-            stats_host = jax.device_get(stats)
-            # Handle sharded stats array (e.g. from pmap)
-            if stats_host.ndim == 2:
-                stats_host = stats_host[0]
+        # Consolidated stats fetch: fetch all stats (energy, variance, pmove, lr)
+        # in a single D2H transfer. This replaces separate calls for logging and MCMC.
+        stats_host = jax.device_get(stats)
+        if stats_host.ndim == 2:  # Handle sharded stats (e.g. from pmap)
+            stats_host = stats_host[0]
 
+        if (i + 1) % print_every == 0:
             energy_val = float(stats_host[ENERGY])
             variance_val = float(stats_host[VARIANCE])
             pmove_val = float(stats_host[PMOVE])
@@ -310,17 +311,12 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             train_utils.log_stats(i + 1, log_stats, wall, width)
             start = time.time()
 
-        # Handle potential sharded stats array
-        if stats.ndim == 2:
-            pmove_ref = stats[0, PMOVE]
-        else:
-            pmove_ref = stats[PMOVE]
-        pmove_value = _to_host(pmove_ref)
+        # Update MCMC width using the already-fetched pmove value
         width, pmoves = mcmc.update_mcmc_width(
             i + 1,
             width,
             adapt_frequency,
-            pmove_value,
+            float(stats_host[PMOVE]),
             pmoves,
             pmove_max=cfg_any.mcmc.get("pmove_max", 0.55),
             pmove_min=cfg_any.mcmc.get("pmove_min", 0.5),
