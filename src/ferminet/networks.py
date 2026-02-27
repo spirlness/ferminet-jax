@@ -596,9 +596,7 @@ def make_fermi_net(
     # Precompute spin features
     spin_labels_const = jnp.concatenate([jnp.zeros(n_up), jnp.ones(n_down)])
     spin_channel_const = (2.0 * spin_labels_const - 1.0)[:, None]
-    same_spin_mask_const = (
-        spin_labels_const[:, None] == spin_labels_const[None, :]
-    )
+    same_spin_mask_const = spin_labels_const[:, None] == spin_labels_const[None, :]
 
     def _forward_single(
         params: ParamMapping,
@@ -619,9 +617,7 @@ def make_fermi_net(
         h_one = _augment_one_electron_features(
             h_one, r_ae_norm, spin_channel_const, charges_in
         )
-        h_two = _construct_two_electron_features(
-            r_ee, r_ee_norm, same_spin_mask_const
-        )
+        h_two = _construct_two_electron_features(r_ee, r_ee_norm, same_spin_mask_const)
 
         # H1: Cast to bfloat16 for Tensor Core utilisation in interaction layers.
         if use_bf16:
