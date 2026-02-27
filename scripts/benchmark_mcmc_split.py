@@ -1,4 +1,3 @@
-
 import time
 
 import jax
@@ -10,6 +9,7 @@ from ferminet import mcmc, types
 def _split_key(key):
     keys = jax.random.split(key)
     return keys[0], keys[1]
+
 
 def mh_accept_old(
     x1, x2, lp_1, lp_2, ratio, key, num_accepts, hmean1=None, hmean2=None
@@ -28,6 +28,7 @@ def mh_accept_old(
         hmean_new = None
 
     return x_new, lp_new, num_accepts, hmean_new, key
+
 
 def mh_update_old(
     params, f, data, key, lp_1, num_accepts, hmean_1, stddev=0.02, atoms=None, ndim=3
@@ -77,6 +78,7 @@ def mh_update_old(
     new_data = data._replace(positions=x_new)
     return new_data, key, lp_new, num_accepts, hmean_new
 
+
 def benchmark():
     print(f"Devices: {jax.devices()}")
 
@@ -87,10 +89,12 @@ def benchmark():
     nelec = 32
     ndim = 3
     positions = jnp.zeros((batch_size, nelec * ndim))
-    spins = jnp.zeros((batch_size,), dtype=jnp.int32) # dummy
+    spins = jnp.zeros((batch_size,), dtype=jnp.int32)  # dummy
     atoms = jnp.zeros((1, ndim))
     charges = jnp.array([1.0])
-    data = types.FermiNetData(positions=positions, spins=spins, atoms=atoms, charges=charges)
+    data = types.FermiNetData(
+        positions=positions, spins=spins, atoms=atoms, charges=charges
+    )
 
     key = jax.random.PRNGKey(0)
     lp_1 = jnp.zeros((batch_size,))
@@ -124,9 +128,9 @@ def benchmark():
     carry_new = (data, key, lp_1, num_accepts, hmean_1)
     # Compile scan
     scan_new = jax.jit(lambda c: jax.lax.scan(step_new, c, None, length=steps))
-    _ = scan_new(carry_new) # warmup scan
+    _ = scan_new(carry_new)  # warmup scan
 
-    jax.block_until_ready(carry_new[0].positions) # ensure ready
+    jax.block_until_ready(carry_new[0].positions)  # ensure ready
     start_time = time.perf_counter()
     final_carry_new, _ = scan_new(carry_new)
     jax.block_until_ready(final_carry_new[0].positions)
@@ -144,7 +148,7 @@ def benchmark():
 
     carry_old = (data, key, lp_1, num_accepts, hmean_1)
     scan_old = jax.jit(lambda c: jax.lax.scan(step_old, c, None, length=steps))
-    _ = scan_old(carry_old) # warmup scan
+    _ = scan_old(carry_old)  # warmup scan
 
     jax.block_until_ready(carry_old[0].positions)
     start_time = time.perf_counter()
@@ -155,6 +159,7 @@ def benchmark():
     print(f"Old Time: {time_old:.6f} s")
 
     print(f"Speedup: {time_old / time_new:.4f}x")
+
 
 if __name__ == "__main__":
     benchmark()
