@@ -226,19 +226,40 @@ def test_train_loop_with_stubbed_dependencies(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr(train.constants, "pmean", fake_pmean, raising=False)
-    monkeypatch.setattr(train.jax, "pmap", lambda fn: fn, raising=False)
 
+    # Update pmap mock to return arrays with a leading dimension (simulating devices)
+    def fake_pmap(fn, *args, **kwargs):
+        def pmapped_fn(*fn_args, **fn_kwargs):
+            res = fn(*fn_args, **fn_kwargs)
+            return jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, 0), res)
+        return pmapped_fn
+
+    monkeypatch.setattr(train.jax, "pmap", fake_pmap, raising=False)
+
+    # Update device_get mock to handle the batched retrieval pattern
+    # The code does `device_get(tree_map(lambda x: x[0], tree))`
+    # If we are mocking pmap to return sharded arrays (with leading dim),
+    # then x[0] will be a scalar/array without the leading dim.
+    # device_get should just return it as numpy array.
     def fake_device_get(x):
         return jax.tree_util.tree_map(
-            lambda leaf: (
-                jnp.asarray(leaf)[None] if jnp.ndim(leaf) == 0 else jnp.asarray(leaf)
-            ),
+            lambda leaf: jnp.asarray(leaf),
             x,
         )
 
     monkeypatch.setattr(train.jax, "device_get", fake_device_get, raising=False)
+
+    # replicate_all_local_devices should also add a dimension if we want to be consistent
+    # But train.py uses it before pmap (mostly).
+    # Wait, train.py uses replicate_tree (which calls replicate_all_local_devices).
+    # If we want `opt_state` to have leading dim, we should ensure `init_opt_state` returns it or `pmap` handles it.
+    # In train.py: `opt_state = jax.pmap(init_opt_state)(params)`
+    # So if we mock `pmap` to add a dimension, `opt_state` will be correct.
+
+    # However, `params` are replicated using `device_utils.replicate_tree`.
+    # Let's fix `replicate_all_local_devices` to add a dimension too.
     monkeypatch.setattr(
-        train.kfac_jax.utils, "replicate_all_local_devices", lambda x: x, raising=False
+        train.kfac_jax.utils, "replicate_all_local_devices", lambda x: jax.tree_util.tree_map(lambda l: jnp.expand_dims(l, 0), x), raising=False
     )
     monkeypatch.setattr(
         train.kfac_jax.utils,
