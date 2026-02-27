@@ -107,5 +107,4 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    flags.mark_flag_as_required("config")
     app.run(main)

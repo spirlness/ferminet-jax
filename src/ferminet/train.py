@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import inspect
+import os
 import time
 from collections.abc import Mapping
 from typing import Any, cast
@@ -30,20 +31,6 @@ from ferminet.utils import devices as device_utils
 Array = jnp.ndarray
 ParamTree = types.ParamTree
 
-# ── H2: Persistent compilation cache ─────────────────────────────────────────
-# Caches XLA compilations to disk so subsequent runs skip the ~20s compile.
-import os as _os  # noqa: E402
-
-_cache_dir = _os.environ.get("JAX_CACHE_DIR", "/tmp/ferminet_jax_cache")
-jax.config.update("jax_compilation_cache_dir", _cache_dir)
-jax.config.update("jax_persistent_cache_min_entry_size_bytes", 0)
-jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
-
-# ── H3: Allow TF32 matmul on Ampere+ GPUs for ~3x throughput ─────────────────
-# "default" uses TF32 for matmuls (19-bit effective precision, sufficient for VMC).
-# Use "highest" for full float32 if numerics are suspect.
-jax.config.update("jax_default_matmul_precision", "default")
-
 # Constants for stats array indices
 ENERGY = 0
 VARIANCE = 1
@@ -59,6 +46,14 @@ _restore_checkpoint = train_utils.restore_checkpoint
 _shard_array = device_utils.shard_array
 _shard_data = device_utils.shard_data
 _p_split = device_utils.p_split
+
+
+def _configure_jax_runtime() -> None:
+    cache_dir = os.environ.get("JAX_CACHE_DIR", "/tmp/ferminet_jax_cache")
+    jax.config.update("jax_compilation_cache_dir", cache_dir)
+    jax.config.update("jax_persistent_cache_min_entry_size_bytes", 0)
+    jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+    jax.config.update("jax_default_matmul_precision", "default")
 
 
 def _filter_kwargs(fn: Any, kwargs: Mapping[str, Any]) -> dict[str, Any]:
@@ -89,6 +84,7 @@ def _convert_to_float(value: Any) -> float:
 
 def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     """Run VMC training with KFAC or Adam optimizer."""
+    _configure_jax_runtime()
     cfg = base_config.resolve(cfg)
     base_config.validate_config(cfg)
     cfg_any = cast(Any, cfg)
@@ -314,22 +310,21 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             train_utils.log_stats(i + 1, log_stats, wall, width)
             start = time.time()
 
-        if (i + 1) % adapt_frequency == 0:
-            # Handle potential sharded stats array
-            if stats.ndim == 2:
-                pmove_ref = stats[0, PMOVE]
-            else:
-                pmove_ref = stats[PMOVE]
-            pmove_value = _to_host(pmove_ref)
-            width, pmoves = mcmc.update_mcmc_width(
-                i + 1,
-                width,
-                adapt_frequency,
-                pmove_value,
-                pmoves,
-                pmove_max=cfg_any.mcmc.get("pmove_max", 0.55),
-                pmove_min=cfg_any.mcmc.get("pmove_min", 0.5),
-            )
+        # Handle potential sharded stats array
+        if stats.ndim == 2:
+            pmove_ref = stats[0, PMOVE]
+        else:
+            pmove_ref = stats[PMOVE]
+        pmove_value = _to_host(pmove_ref)
+        width, pmoves = mcmc.update_mcmc_width(
+            i + 1,
+            width,
+            adapt_frequency,
+            pmove_value,
+            pmoves,
+            pmove_max=cfg_any.mcmc.get("pmove_max", 0.55),
+            pmove_min=cfg_any.mcmc.get("pmove_min", 0.5),
+        )
 
         if (i + 1) % checkpoint_every == 0:
             _last_host_params = jax.tree_util.tree_map(
