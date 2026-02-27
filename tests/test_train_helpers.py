@@ -259,7 +259,10 @@ def test_train_loop_with_stubbed_dependencies(monkeypatch, tmp_path):
     # However, `params` are replicated using `device_utils.replicate_tree`.
     # Let's fix `replicate_all_local_devices` to add a dimension too.
     monkeypatch.setattr(
-        train.kfac_jax.utils, "replicate_all_local_devices", lambda x: jax.tree_util.tree_map(lambda l: jnp.expand_dims(l, 0), x), raising=False
+        train.kfac_jax.utils,
+        "replicate_all_local_devices",
+        lambda x: jax.tree_util.tree_map(lambda leaf: jnp.expand_dims(leaf, 0), x),
+        raising=False,
     )
     monkeypatch.setattr(
         train.kfac_jax.utils,
