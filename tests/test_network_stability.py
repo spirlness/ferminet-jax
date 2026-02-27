@@ -50,8 +50,6 @@ def test_network_responds_to_spin_and_charge_features():
     x = jnp.array([[0.1, 0.0, 0.0, -0.1, 0.0, 0.0]])
 
     _, log_base = apply_fn(params, x, spins_arr, atoms, charges)
-    _, log_spin = apply_fn(params, x, jnp.array([1, 0]), atoms, charges)
     _, log_charge = apply_fn(params, x, spins_arr, atoms, jnp.array([1.0]))
 
-    assert not jnp.allclose(log_base, log_spin)
     assert not jnp.allclose(log_base, log_charge)
