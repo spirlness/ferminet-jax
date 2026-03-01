@@ -44,5 +44,6 @@ def benchmark():
     avg_time = (end_time - start_time) / num_iters
     print(f"Average time per apply: {avg_time * 1000:.3f} ms")
 
+
 if __name__ == "__main__":
     benchmark()
