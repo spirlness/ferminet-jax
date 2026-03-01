@@ -1,9 +1,12 @@
 import time
+from typing import Any, cast
+
 import jax
 import jax.numpy as jnp
+
 from ferminet.configs import helium
 from ferminet.networks import make_fermi_net
-from typing import Any, cast
+
 
 def benchmark():
     atoms = jnp.array([[0.0, 0.0, 0.0]])
