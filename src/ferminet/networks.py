@@ -219,23 +219,26 @@ def _construct_two_electron_features(
     return jnp.concatenate([r_ee, r_ee_norm[..., None], same_spin[..., None]], axis=-1)
 
 
-def _electron_electron_mask(n_electrons: int) -> Array:
-    """Mask to exclude self-interactions in two-electron features."""
-    eye = jnp.eye(n_electrons)
-    return 1.0 - eye
-
-
-def _masked_mean(values: Array, mask: Array) -> Array:
-    """Compute masked mean over axis=1.
+def _masked_mean(values: Array) -> Array:
+    """Compute masked mean over axis=1 excluding the diagonal.
 
     Args:
-        values: Array of shape (n, n, feat).
-        mask: Array of shape (n, n).
+        values: Array of shape (n, n, feat) or (batch, n, n, feat).
     """
-    mask_expanded = mask[..., None]
-    summed = jnp.sum(values * mask_expanded, axis=1)
-    denom = jnp.sum(mask_expanded, axis=1)
-    return summed / jnp.maximum(denom, 1.0)
+    # Sum over axis=1 (or axis=-2 for batched) and subtract the diagonal
+    # values: (..., n, n, feat)
+    summed = jnp.sum(values, axis=-2)
+
+    # We want to subtract values[..., i, i, :] for all i.
+    # jnp.diagonal(values, axis1=-3, axis2=-2) returns (..., feat, n)
+    # So we need to swap the last two axes to get (..., n, feat)
+    diag = jnp.diagonal(values, axis1=-3, axis2=-2)
+    diag = jnp.swapaxes(diag, -2, -1)
+
+    summed = summed - diag
+    n_electrons = values.shape[-2]
+    denom = max(n_electrons - 1.0, 1.0)
+    return summed / denom
 
 
 def _init_interaction_layer(
@@ -262,7 +265,6 @@ def _apply_interaction_layer(
     params: Mapping[str, Mapping[str, Array]],
     h_one: Array,
     h_two: Array,
-    mask: Array,
     activation: Callable[[Array], Array],
     use_residual: bool,
 ) -> tuple[Array, Array]:
@@ -270,7 +272,7 @@ def _apply_interaction_layer(
     # Compute mean and broadcast in one step — avoids materialising the
     # intermediate (1, feat) array before broadcast.
     h_one_mean = jnp.broadcast_to(jnp.mean(h_one, axis=0, keepdims=True), h_one.shape)
-    h_two_mean = _masked_mean(h_two, mask)
+    h_two_mean = _masked_mean(h_two)
 
     h_one_input = jnp.concatenate([h_one, h_one_mean, h_two_mean], axis=-1)
     one_params = params[_KEY_ONE]
@@ -593,8 +595,6 @@ def make_fermi_net(
 
         return cast(ParamTree, params)
 
-    mask = _electron_electron_mask(n_electrons)
-
     def _forward_single(
         params: ParamMapping,
         electrons_single: Array,
@@ -628,7 +628,6 @@ def make_fermi_net(
                 layer_params,
                 h_one,
                 h_two,
-                mask,
                 activation,
                 use_residual=layer_index > 0,
             )
