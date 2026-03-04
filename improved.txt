@@ -1,0 +1,10 @@
+=== FermiNet Train-Step Benchmark (Adam) ===
+Config: helium_quick
+Batch size: 256
+MCMC steps: 10
+Timed steps: 100
+Compile+first step: 4.961 s
+Steady step avg: 25.05 ms
+Steady step p50: 24.34 ms
+Steady step p95: 28.52 ms
+Last stats: loss=-2.407552, variance=1.123814, pmove=0.9574
