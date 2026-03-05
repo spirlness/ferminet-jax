@@ -41,8 +41,7 @@ def test_activation_lookup_and_pairwise_helpers():
 
 def test_masked_mean_and_determinant_combination():
     values = jnp.arange(12.0).reshape(2, 2, 3)
-    mask = networks._electron_electron_mask(2)
-    masked_mean = networks._masked_mean(values, mask)
+    masked_mean = networks._masked_mean(values)
     assert masked_mean.shape == (2, 3)
 
     orbitals_up = jnp.eye(2)[None, ...]
