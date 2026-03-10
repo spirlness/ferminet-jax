@@ -19,7 +19,6 @@ from ferminet.hamiltonian import (
 )
 from ferminet.networks import (
     _apply_interaction_layer,
-    _electron_electron_mask,
     _init_interaction_layer,
     make_fermi_net,
 )
@@ -86,10 +85,9 @@ def test_interaction_layer_optimised_broadcast():
     layer_params = _init_interaction_layer(k1, in_one, in_two, out_one, out_two)
     h_one = jax.random.normal(k2, (n_elec, in_one))
     h_two = jax.random.normal(k3, (n_elec, n_elec, in_two))
-    mask = _electron_electron_mask(n_elec)
 
     h_one_out, h_two_out = _apply_interaction_layer(
-        layer_params, h_one, h_two, mask, jnp.tanh, use_residual=False
+        layer_params, h_one, h_two, jnp.tanh, use_residual=False
     )
     assert h_one_out.shape == (n_elec, out_one)
     assert h_two_out.shape == (n_elec, n_elec, out_two)
