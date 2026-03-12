@@ -31,11 +31,6 @@ def _fori_loop(
     return fori_loop(lower, upper, body_fun, init_val)
 
 
-def _split_key(key: jax.Array) -> tuple[jax.Array, jax.Array]:
-    keys = jax.random.split(key)
-    return keys[0], keys[1]
-
-
 def _asarray_data(
     data: FermiNetData,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
@@ -72,6 +67,7 @@ def mh_accept(
     hmean2: jnp.ndarray | None = None,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray | None]:
     """Metropolis-Hastings accept/reject step with non-finite guards."""
+    # subkey is passed directly from mh_update
     rnd = jnp.log(jax.random.uniform(subkey, shape=ratio.shape))
     finite_proposal = jnp.isfinite(lp_2) & jnp.isfinite(ratio)
     cond = (ratio > rnd) & finite_proposal
@@ -118,6 +114,7 @@ def mh_update(
     Returns:
         (new_data, key, lp_new, num_accepts, hmean_new)
     """
+    # Split key to directly pass subkey_accept to mh_accept
     key, subkey, subkey_accept = jax.random.split(key, num=3)
     positions, spins, atoms_data, charges = _asarray_data(data)
     x1: jnp.ndarray = positions
