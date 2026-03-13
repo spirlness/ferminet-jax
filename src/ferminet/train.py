@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import inspect
+import math
 import os
 import time
 from collections.abc import Mapping
@@ -60,19 +61,6 @@ def _filter_kwargs(fn: Any, kwargs: Mapping[str, Any]) -> dict[str, Any]:
     """Filter kwargs to those accepted by fn."""
     params = inspect.signature(fn).parameters
     return {k: v for k, v in kwargs.items() if k in params}
-
-
-def _to_host(tree: Any) -> Any:
-    """Convert a PyTree of device arrays to a PyTree of host scalars."""
-    host_tree = jax.device_get(tree)
-
-    def _to_scalar(x: Any) -> float:
-        x = jnp.asarray(x)
-        if x.ndim > 0:
-            x = jnp.reshape(x, (-1,))[0]
-        return float(x)
-
-    return jax.tree_util.tree_map(_to_scalar, host_tree)
 
 
 def _convert_to_float(value: Any) -> float:
@@ -276,18 +264,17 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
         params, opt_state = new_params, new_opt_state
 
-        if (i + 1) % print_every == 0:
-            stats_host = jax.device_get(stats)
-            # Handle sharded stats array (e.g. from pmap)
-            if stats_host.ndim == 2:
-                stats_host = stats_host[0]
+        stats_host = jax.device_get(stats)
+        if stats_host.ndim == 2:
+            stats_host = stats_host[0]
 
+        if (i + 1) % print_every == 0:
             energy_val = float(stats_host[ENERGY])
             variance_val = float(stats_host[VARIANCE])
             pmove_val = float(stats_host[PMOVE])
             lr_val = float(stats_host[LEARNING_RATE])
 
-            if not jnp.isfinite(energy_val):
+            if not math.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
                     energy=energy_val,
@@ -310,12 +297,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             train_utils.log_stats(i + 1, log_stats, wall, width)
             start = time.time()
 
-        # Handle potential sharded stats array
-        if stats.ndim == 2:
-            pmove_ref = stats[0, PMOVE]
-        else:
-            pmove_ref = stats[PMOVE]
-        pmove_value = _to_host(pmove_ref)
+        pmove_value = float(stats_host[PMOVE])
         width, pmoves = mcmc.update_mcmc_width(
             i + 1,
             width,
