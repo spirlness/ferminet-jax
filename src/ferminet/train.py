@@ -323,13 +323,19 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
         if (i + 1) % checkpoint_every == 0:
             _last_host_params = jax.device_get(
-                jax.tree_util.tree_map(lambda x: x[0] if getattr(x, 'ndim', 0) > 0 else x, params)
+                jax.tree_util.tree_map(
+                    lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, params
+                )
             )
             _last_host_opt_state = jax.device_get(
-                jax.tree_util.tree_map(lambda x: x[0] if getattr(x, 'ndim', 0) > 0 else x, opt_state)
+                jax.tree_util.tree_map(
+                    lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, opt_state
+                )
             )
             _last_host_data = jax.device_get(
-                jax.tree_util.tree_map(lambda x: x[0] if getattr(x, 'ndim', 0) > 0 else x, data)
+                jax.tree_util.tree_map(
+                    lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, data
+                )
             )
             _last_ckpt_step = i + 1
             checkpoint.save_checkpoint(
@@ -348,13 +354,19 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         host_data = _last_host_data
     else:
         host_params = jax.device_get(
-            jax.tree_util.tree_map(lambda x: x[0] if getattr(x, 'ndim', 0) > 0 else x, params)
+            jax.tree_util.tree_map(
+                lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, params
+            )
         )
         host_opt_state = jax.device_get(
-            jax.tree_util.tree_map(lambda x: x[0] if getattr(x, 'ndim', 0) > 0 else x, opt_state)
+            jax.tree_util.tree_map(
+                lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, opt_state
+            )
         )
         host_data = jax.device_get(
-            jax.tree_util.tree_map(lambda x: x[0] if getattr(x, 'ndim', 0) > 0 else x, data)
+            jax.tree_util.tree_map(
+                lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, data
+            )
         )
     return {
         "params": host_params,
