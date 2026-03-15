@@ -276,15 +276,16 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
         params, opt_state = new_params, new_opt_state
 
-        if (i + 1) % print_every == 0:
-            stats_host = jax.device_get(stats)
-            # Handle sharded stats array (e.g. from pmap)
-            if stats_host.ndim == 2:
-                stats_host = stats_host[0]
+        stats_host = jax.device_get(stats)
+        # Handle sharded stats array (e.g. from pmap)
+        if stats_host.ndim == 2:
+            stats_host = stats_host[0]
 
+        pmove_val = float(stats_host[PMOVE])
+
+        if (i + 1) % print_every == 0:
             energy_val = float(stats_host[ENERGY])
             variance_val = float(stats_host[VARIANCE])
-            pmove_val = float(stats_host[PMOVE])
             lr_val = float(stats_host[LEARNING_RATE])
 
             if not jnp.isfinite(energy_val):
@@ -310,31 +311,25 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             train_utils.log_stats(i + 1, log_stats, wall, width)
             start = time.time()
 
-        # Handle potential sharded stats array
-        if stats.ndim == 2:
-            pmove_ref = stats[0, PMOVE]
-        else:
-            pmove_ref = stats[PMOVE]
-        pmove_value = _to_host(pmove_ref)
         width, pmoves = mcmc.update_mcmc_width(
             i + 1,
             width,
             adapt_frequency,
-            pmove_value,
+            pmove_val,
             pmoves,
             pmove_max=cfg_any.mcmc.get("pmove_max", 0.55),
             pmove_min=cfg_any.mcmc.get("pmove_min", 0.5),
         )
 
         if (i + 1) % checkpoint_every == 0:
-            _last_host_params = jax.tree_util.tree_map(
-                lambda x: jax.device_get(x)[0], params
+            _last_host_params = jax.device_get(
+                jax.tree_util.tree_map(lambda x: x[0] if getattr(x, 'ndim', 0) > 0 else x, params)
             )
-            _last_host_opt_state = jax.tree_util.tree_map(
-                lambda x: jax.device_get(x)[0], opt_state
+            _last_host_opt_state = jax.device_get(
+                jax.tree_util.tree_map(lambda x: x[0] if getattr(x, 'ndim', 0) > 0 else x, opt_state)
             )
-            _last_host_data = jax.tree_util.tree_map(
-                lambda x: jax.device_get(x)[0], data
+            _last_host_data = jax.device_get(
+                jax.tree_util.tree_map(lambda x: x[0] if getattr(x, 'ndim', 0) > 0 else x, data)
             )
             _last_ckpt_step = i + 1
             checkpoint.save_checkpoint(
@@ -352,11 +347,15 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         host_opt_state = _last_host_opt_state
         host_data = _last_host_data
     else:
-        host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
-        host_opt_state = jax.tree_util.tree_map(
-            lambda x: jax.device_get(x)[0], opt_state
+        host_params = jax.device_get(
+            jax.tree_util.tree_map(lambda x: x[0] if getattr(x, 'ndim', 0) > 0 else x, params)
         )
-        host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
+        host_opt_state = jax.device_get(
+            jax.tree_util.tree_map(lambda x: x[0] if getattr(x, 'ndim', 0) > 0 else x, opt_state)
+        )
+        host_data = jax.device_get(
+            jax.tree_util.tree_map(lambda x: x[0] if getattr(x, 'ndim', 0) > 0 else x, data)
+        )
     return {
         "params": host_params,
         "opt_state": host_opt_state,
