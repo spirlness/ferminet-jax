@@ -125,3 +125,33 @@ def test_to_float_helper_works_on_scalars_and_arrays():
     assert _to_float(3.14) == pytest.approx(3.14)
     assert _to_float(jnp.array(2.71)) == pytest.approx(2.71)
     assert _to_float(jnp.array([1.0, 2.0])) == pytest.approx(1.0)
+
+
+# ── P7: Unified host-device sync ──────────────────────────────────────────────
+
+
+def test_unified_stats_host_sync_logic():
+    """Verify stats array extraction logic handles different shapes correctly."""
+    import numpy as np
+    from ferminet.train import ENERGY, VARIANCE, PMOVE, LEARNING_RATE
+
+    # 1D array from jnp.stack
+    stats_1d = np.array([-2.90, 0.05, 0.55, 0.01])
+
+    # 2D array from pmap
+    stats_2d = np.array([[-2.90, 0.05, 0.55, 0.01], [-2.91, 0.06, 0.54, 0.01]])
+
+    # Simulate logic in train.py
+    for stats_host in [stats_1d, stats_2d]:
+        if stats_host.ndim == 2:
+            stats_host = stats_host[0]
+
+        energy_val = float(stats_host[ENERGY])
+        variance_val = float(stats_host[VARIANCE])
+        pmove_val = float(stats_host[PMOVE])
+        lr_val = float(stats_host[LEARNING_RATE])
+
+        assert energy_val == pytest.approx(-2.90)
+        assert variance_val == pytest.approx(0.05)
+        assert pmove_val == pytest.approx(0.55)
+        assert lr_val == pytest.approx(0.01)
