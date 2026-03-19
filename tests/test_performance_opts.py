@@ -125,3 +125,45 @@ def test_to_float_helper_works_on_scalars_and_arrays():
     assert _to_float(3.14) == pytest.approx(3.14)
     assert _to_float(jnp.array(2.71)) == pytest.approx(2.71)
     assert _to_float(jnp.array([1.0, 2.0])) == pytest.approx(1.0)
+
+
+# ── P7: Device to Host Transfer Optimization ──────────────────────────────────
+
+
+def test_device_to_host_transfer_optimization():
+    """Verifies that fetching stats via stacked array avoids individual _to_host calls."""
+    key = jax.random.PRNGKey(0)
+    energy = jax.random.normal(key, ())
+    variance = jax.random.normal(key, ())
+    pmove = jax.random.normal(key, ())
+    lr = jax.random.normal(key, ())
+
+    # Old way (sequential fetch simulation)
+    def fetch_sequential(energy, variance, pmove, lr):
+        def _to_host_sim(x):
+            return float(jax.device_get(x))
+
+        e_val = _to_host_sim(energy)
+        v_val = _to_host_sim(variance)
+        p_val = _to_host_sim(pmove)
+        l_val = _to_host_sim(lr)
+        return e_val, v_val, p_val, l_val
+
+    # New way (stacked array fetch)
+    def fetch_stacked(stats):
+        stats_host = jax.device_get(stats)
+        if stats_host.ndim == 2:
+            stats_host = stats_host[0]
+        return (
+            float(stats_host[0]),
+            float(stats_host[1]),
+            float(stats_host[2]),
+            float(stats_host[3]),
+        )
+
+    stats = jnp.stack([energy, variance, pmove, lr])
+
+    res_seq = fetch_sequential(energy, variance, pmove, lr)
+    res_stacked = fetch_stacked(stats)
+
+    assert jnp.allclose(jnp.array(res_seq), jnp.array(res_stacked))
