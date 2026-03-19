@@ -142,6 +142,7 @@ def test_device_to_host_transfer_optimization():
     def fetch_sequential(energy, variance, pmove, lr):
         def _to_host_sim(x):
             return float(jax.device_get(x))
+
         e_val = _to_host_sim(energy)
         v_val = _to_host_sim(variance)
         p_val = _to_host_sim(pmove)
@@ -153,7 +154,12 @@ def test_device_to_host_transfer_optimization():
         stats_host = jax.device_get(stats)
         if stats_host.ndim == 2:
             stats_host = stats_host[0]
-        return float(stats_host[0]), float(stats_host[1]), float(stats_host[2]), float(stats_host[3])
+        return (
+            float(stats_host[0]),
+            float(stats_host[1]),
+            float(stats_host[2]),
+            float(stats_host[3]),
+        )
 
     stats = jnp.stack([energy, variance, pmove, lr])
 
