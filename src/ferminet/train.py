@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import inspect
+import math
 import os
 import time
 from collections.abc import Mapping
@@ -61,18 +62,6 @@ def _filter_kwargs(fn: Any, kwargs: Mapping[str, Any]) -> dict[str, Any]:
     params = inspect.signature(fn).parameters
     return {k: v for k, v in kwargs.items() if k in params}
 
-
-def _to_host(tree: Any) -> Any:
-    """Convert a PyTree of device arrays to a PyTree of host scalars."""
-    host_tree = jax.device_get(tree)
-
-    def _to_scalar(x: Any) -> float:
-        x = jnp.asarray(x)
-        if x.ndim > 0:
-            x = jnp.reshape(x, (-1,))[0]
-        return float(x)
-
-    return jax.tree_util.tree_map(_to_scalar, host_tree)
 
 
 def _convert_to_float(value: Any) -> float:
@@ -287,7 +276,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             pmove_val = float(stats_host[PMOVE])
             lr_val = float(stats_host[LEARNING_RATE])
 
-            if not jnp.isfinite(energy_val):
+            if not math.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
                     energy=energy_val,
@@ -315,12 +304,15 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             pmove_ref = stats[0, PMOVE]
         else:
             pmove_ref = stats[PMOVE]
-        pmove_value = _to_host(pmove_ref)
+
+        # Pass the JAX device array directly to update_mcmc_width to avoid
+        # a blocking synchronization every step. The float cast and sync
+        # only happens inside when t % adapt_frequency == 0.
         width, pmoves = mcmc.update_mcmc_width(
             i + 1,
             width,
             adapt_frequency,
-            pmove_value,
+            pmove_ref,
             pmoves,
             pmove_max=cfg_any.mcmc.get("pmove_max", 0.55),
             pmove_min=cfg_any.mcmc.get("pmove_min", 0.5),
