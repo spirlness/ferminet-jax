@@ -63,7 +63,6 @@ def _filter_kwargs(fn: Any, kwargs: Mapping[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in kwargs.items() if k in params}
 
 
-
 def _convert_to_float(value: Any) -> float:
     """Convert a numpy array or scalar to a Python float."""
     if hasattr(value, "ndim") and value.ndim > 0:
