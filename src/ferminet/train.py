@@ -62,24 +62,6 @@ def _filter_kwargs(fn: Any, kwargs: Mapping[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in kwargs.items() if k in params}
 
 
-def _to_host(tree: Any) -> Any:
-    """Convert a PyTree of device arrays to a PyTree of host scalars."""
-    host_tree = jax.device_get(tree)
-
-    def _to_scalar(x: Any) -> float:
-        x = jnp.asarray(x)
-        if x.ndim > 0:
-            x = jnp.reshape(x, (-1,))[0]
-        return float(x)
-
-    return jax.tree_util.tree_map(_to_scalar, host_tree)
-
-
-def _convert_to_float(value: Any) -> float:
-    """Convert a numpy array or scalar to a Python float."""
-    if hasattr(value, "ndim") and value.ndim > 0:
-        return float(value.ravel()[0])
-    return float(value)
 
 
 def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
