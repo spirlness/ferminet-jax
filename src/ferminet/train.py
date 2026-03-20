@@ -297,12 +297,11 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             pmove_ref = stats[0, PMOVE]
         else:
             pmove_ref = stats[PMOVE]
-        pmove_value = _to_host(pmove_ref)
         width, pmoves = mcmc.update_mcmc_width(
             i + 1,
             width,
             adapt_frequency,
-            pmove_value,
+            pmove_ref,
             pmoves,
             pmove_max=cfg_any.mcmc.get("pmove_max", 0.55),
             pmove_min=cfg_any.mcmc.get("pmove_min", 0.5),
