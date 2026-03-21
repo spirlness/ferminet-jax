@@ -327,15 +327,10 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         )
 
         if (i + 1) % checkpoint_every == 0:
-            _last_host_params = jax.tree_util.tree_map(
-                lambda x: jax.device_get(x)[0], params
-            )
-            _last_host_opt_state = jax.tree_util.tree_map(
-                lambda x: jax.device_get(x)[0], opt_state
-            )
-            _last_host_data = jax.tree_util.tree_map(
-                lambda x: jax.device_get(x)[0], data
-            )
+            h_params, h_opt_state, h_data = jax.device_get((params, opt_state, data))
+            _last_host_params = jax.tree_util.tree_map(lambda x: x[0], h_params)
+            _last_host_opt_state = jax.tree_util.tree_map(lambda x: x[0], h_opt_state)
+            _last_host_data = jax.tree_util.tree_map(lambda x: x[0], h_data)
             _last_ckpt_step = i + 1
             checkpoint.save_checkpoint(
                 save_path,
@@ -352,11 +347,10 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         host_opt_state = _last_host_opt_state
         host_data = _last_host_data
     else:
-        host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
-        host_opt_state = jax.tree_util.tree_map(
-            lambda x: jax.device_get(x)[0], opt_state
-        )
-        host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
+        h_params, h_opt_state, h_data = jax.device_get((params, opt_state, data))
+        host_params = jax.tree_util.tree_map(lambda x: x[0], h_params)
+        host_opt_state = jax.tree_util.tree_map(lambda x: x[0], h_opt_state)
+        host_data = jax.tree_util.tree_map(lambda x: x[0], h_data)
     return {
         "params": host_params,
         "opt_state": host_opt_state,
