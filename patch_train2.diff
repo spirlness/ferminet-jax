@@ -1,0 +1,94 @@
+<<<<<<< SEARCH
+        if (i + 1) % adapt_frequency == 0:
+            width, pmoves = _update_width()
+        else:
+            # Update history array without forcing synchronization
+            width, pmoves = mcmc.update_mcmc_width(
+                i + 1,
+                width,
+                adapt_frequency,
+                pmove_ref,
+                pmoves,
+                pmove_max=cfg_any.mcmc.get("pmove_max", 0.55),
+                pmove_min=cfg_any.mcmc.get("pmove_min", 0.5),
+            )
+
+        if (i + 1) % print_every == 0:
+            stats_host = jax.device_get(stats)
+            # Handle sharded stats array (e.g. from pmap)
+            if stats_host.ndim == 2:
+                stats_host = stats_host[0]
+
+            energy_val = float(stats_host[ENERGY])
+            variance_val = float(stats_host[VARIANCE])
+            pmove_val = float(stats_host[PMOVE])
+            lr_val = float(stats_host[LEARNING_RATE])
+
+            if not math.isfinite(energy_val):
+                width = float(cfg_any.mcmc.move_width)
+                log_stats = train_utils.StepStats(
+                    energy=energy_val,
+                    variance=variance_val,
+                    pmove=pmove_val,
+                    learning_rate=lr_val,
+                )
+                wall = time.time() - start
+                train_utils.log_stats(i + 1, log_stats, wall, width)
+                start = time.time()
+                continue
+
+            log_stats = train_utils.StepStats(
+                energy=energy_val,
+                variance=variance_val,
+                pmove=pmove_val,
+                learning_rate=lr_val,
+            )
+            wall = time.time() - start
+            train_utils.log_stats(i + 1, log_stats, wall, width)
+            start = time.time()
+=======
+        # Update history array without forcing synchronization
+        width, pmoves = mcmc.update_mcmc_width(
+            i + 1,
+            width,
+            adapt_frequency,
+            pmove_ref,
+            pmoves,
+            pmove_max=cfg_any.mcmc.get("pmove_max", 0.55),
+            pmove_min=cfg_any.mcmc.get("pmove_min", 0.5),
+        )
+
+        if (i + 1) % print_every == 0:
+            stats_host = jax.device_get(stats)
+            # Handle sharded stats array (e.g. from pmap)
+            if stats_host.ndim == 2:
+                stats_host = stats_host[0]
+
+            energy_val = float(stats_host[ENERGY])
+            variance_val = float(stats_host[VARIANCE])
+            pmove_val = float(stats_host[PMOVE])
+            lr_val = float(stats_host[LEARNING_RATE])
+
+            if not math.isfinite(energy_val):
+                width = float(cfg_any.mcmc.move_width)
+                log_stats = train_utils.StepStats(
+                    energy=energy_val,
+                    variance=variance_val,
+                    pmove=pmove_val,
+                    learning_rate=lr_val,
+                )
+                wall = time.time() - start
+                train_utils.log_stats(i + 1, log_stats, wall, width)
+                start = time.time()
+                continue
+
+            log_stats = train_utils.StepStats(
+                energy=energy_val,
+                variance=variance_val,
+                pmove=pmove_val,
+                learning_rate=lr_val,
+            )
+            wall = time.time() - start
+            train_utils.log_stats(i + 1, log_stats, wall, width)
+            start = time.time()
+>>>>>>> REPLACE
