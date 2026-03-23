@@ -329,8 +329,10 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         if (i + 1) % checkpoint_every == 0:
             # Fetch all PyTrees together to minimize synchronization cost
             host_trees = jax.device_get((params, opt_state, data))
-            _last_host_params, _last_host_opt_state, _last_host_data = jax.tree_util.tree_map(
-                lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, host_trees
+            _last_host_params, _last_host_opt_state, _last_host_data = (
+                jax.tree_util.tree_map(
+                    lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, host_trees
+                )
             )
             _last_ckpt_step = i + 1
             checkpoint.save_checkpoint(
