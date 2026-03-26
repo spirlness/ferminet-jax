@@ -15,8 +15,10 @@ from ferminet.configs import helium_quick
 
 def benchmark():
     cfg = helium_quick.get_config()
-    cfg.optim.iterations = 10
-    cfg.log.checkpoint_every = 5
+    cfg.optim.iterations = 50
+    cfg.log.print_every = 10
+    cfg.mcmc.adapt_frequency = 10
+    cfg.log.checkpoint_every = 10
 
     start = time.time()
     train.train(cfg)
