@@ -246,7 +246,7 @@ def update_mcmc_width(
     t: int,
     width: float,
     adapt_frequency: int,
-    pmove: float,
+    pmove: float | jnp.ndarray,
     pmoves: jnp.ndarray,
     pmove_max: float = 0.55,
     pmove_min: float = 0.5,
