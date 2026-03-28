@@ -6,12 +6,10 @@ grouped jax.device_get.
 """
 
 import time
-import jax
-import sys
-from ml_collections import ConfigDict
 
-from ferminet.configs import helium_quick
 from ferminet import train
+from ferminet.configs import helium_quick
+
 
 def main() -> None:
     print("Starting checkpoint benchmark...")
@@ -27,6 +25,7 @@ def main() -> None:
 
     print(f"Benchmark completed in {wall_time:.3f} seconds.")
     print(f"Final step: {result['step']}")
+
 
 if __name__ == "__main__":
     main()
