@@ -330,7 +330,8 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, host_params_device
             )
             _last_host_opt_state = jax.tree_util.tree_map(
-                lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, host_opt_state_device
+                lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x,
+                host_opt_state_device,
             )
             _last_host_data = jax.tree_util.tree_map(
                 lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, host_data_device
@@ -351,8 +352,8 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         host_opt_state = _last_host_opt_state
         host_data = _last_host_data
     else:
-        host_params_device, host_opt_state_device, host_data_device = (
-            jax.device_get((params, opt_state, data))
+        host_params_device, host_opt_state_device, host_data_device = jax.device_get(
+            (params, opt_state, data)
         )
         host_params = jax.tree_util.tree_map(
             lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, host_params_device
