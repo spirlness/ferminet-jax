@@ -170,14 +170,10 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 step,
             )
 
-            energy = loss_value[0] if hasattr(loss_value, "__getitem__") else loss_value
-            variance = (
-                aux.variance[0]
-                if hasattr(aux.variance, "__getitem__")
-                else aux.variance
+            metrics = (loss_value, aux.variance, pmove, step)
+            energy, variance, pmove_val, step_val = jax.tree_util.tree_map(
+                lambda x: x[0] if hasattr(x, "__getitem__") else x, metrics
             )
-            pmove_val = pmove[0] if hasattr(pmove, "__getitem__") else pmove
-            step_val = step[0] if hasattr(step, "__getitem__") else step
             lr = jnp.asarray(schedule(step_val))
             # Reshape scalar inputs to ensure they have compatible shapes for stacking
             energy = jnp.reshape(energy, ())
@@ -315,7 +311,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             pmove_ref = stats[0, PMOVE]
         else:
             pmove_ref = stats[PMOVE]
-        pmove_value = _to_host(pmove_ref)
+        pmove_value = pmove_ref
         width, pmoves = mcmc.update_mcmc_width(
             i + 1,
             width,
@@ -327,14 +323,17 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         )
 
         if (i + 1) % checkpoint_every == 0:
+            host_params_device, host_opt_state_device, host_data_device = (
+                jax.device_get((params, opt_state, data))
+            )
             _last_host_params = jax.tree_util.tree_map(
-                lambda x: jax.device_get(x)[0], params
+                lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, host_params_device
             )
             _last_host_opt_state = jax.tree_util.tree_map(
-                lambda x: jax.device_get(x)[0], opt_state
+                lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, host_opt_state_device
             )
             _last_host_data = jax.tree_util.tree_map(
-                lambda x: jax.device_get(x)[0], data
+                lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, host_data_device
             )
             _last_ckpt_step = i + 1
             checkpoint.save_checkpoint(
@@ -352,11 +351,18 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         host_opt_state = _last_host_opt_state
         host_data = _last_host_data
     else:
-        host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
-        host_opt_state = jax.tree_util.tree_map(
-            lambda x: jax.device_get(x)[0], opt_state
+        host_params_device, host_opt_state_device, host_data_device = (
+            jax.device_get((params, opt_state, data))
         )
-        host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
+        host_params = jax.tree_util.tree_map(
+            lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, host_params_device
+        )
+        host_opt_state = jax.tree_util.tree_map(
+            lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, host_opt_state_device
+        )
+        host_data = jax.tree_util.tree_map(
+            lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, host_data_device
+        )
     return {
         "params": host_params,
         "opt_state": host_opt_state,
