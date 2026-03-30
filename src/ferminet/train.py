@@ -62,8 +62,6 @@ def _filter_kwargs(fn: Any, kwargs: Mapping[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in kwargs.items() if k in params}
 
 
-
-
 def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     """Run VMC training with KFAC or Adam optimizer."""
     _configure_jax_runtime()
@@ -227,7 +225,6 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     checkpoint_every = int(cfg_any.log.checkpoint_every)
     adapt_frequency = int(cfg_any.mcmc.adapt_frequency)
     save_path = cfg_any.log.save_path
-
 
     # P4: Cache most recent host-side checkpoint data to avoid redundant
     # device_get at the end of training.

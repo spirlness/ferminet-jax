@@ -108,7 +108,3 @@ def test_pmap_with_donate_callable():
     assert callable(decorator)
     pmapped = decorator(dummy)
     assert callable(pmapped)
-
-
-
-
