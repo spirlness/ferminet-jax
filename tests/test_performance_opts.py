@@ -7,7 +7,6 @@ from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
-import pytest
 
 from ferminet.configs import helium
 from ferminet.constants import pmap_with_donate
