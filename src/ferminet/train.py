@@ -62,19 +62,6 @@ def _filter_kwargs(fn: Any, kwargs: Mapping[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in kwargs.items() if k in params}
 
 
-def _to_host(tree: Any) -> Any:
-    """Convert a PyTree of device arrays to a PyTree of host scalars."""
-    host_tree = jax.device_get(tree)
-
-    def _to_scalar(x: Any) -> float:
-        x = jnp.asarray(x)
-        if x.ndim > 0:
-            x = jnp.reshape(x, (-1,))[0]
-        return float(x)
-
-    return jax.tree_util.tree_map(_to_scalar, host_tree)
-
-
 def _convert_to_float(value: Any) -> float:
     """Convert a numpy array or scalar to a Python float."""
     if hasattr(value, "ndim") and value.ndim > 0:
@@ -283,17 +270,14 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 stats_host = stats_host[0]
 
             energy_val = float(stats_host[ENERGY])
-            variance_val = float(stats_host[VARIANCE])
-            pmove_val = float(stats_host[PMOVE])
-            lr_val = float(stats_host[LEARNING_RATE])
 
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
                     energy=energy_val,
-                    variance=variance_val,
-                    pmove=pmove_val,
-                    learning_rate=lr_val,
+                    variance=float(stats_host[VARIANCE]),
+                    pmove=float(stats_host[PMOVE]),
+                    learning_rate=float(stats_host[LEARNING_RATE]),
                 )
                 wall = time.time() - start
                 train_utils.log_stats(i + 1, log_stats, wall, width)
@@ -302,9 +286,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
             log_stats = train_utils.StepStats(
                 energy=energy_val,
-                variance=variance_val,
-                pmove=pmove_val,
-                learning_rate=lr_val,
+                variance=float(stats_host[VARIANCE]),
+                pmove=float(stats_host[PMOVE]),
+                learning_rate=float(stats_host[LEARNING_RATE]),
             )
             wall = time.time() - start
             train_utils.log_stats(i + 1, log_stats, wall, width)
@@ -315,12 +299,11 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             pmove_ref = stats[0, PMOVE]
         else:
             pmove_ref = stats[PMOVE]
-        pmove_value = _to_host(pmove_ref)
         width, pmoves = mcmc.update_mcmc_width(
             i + 1,
             width,
             adapt_frequency,
-            pmove_value,
+            pmove_ref,
             pmoves,
             pmove_max=cfg_any.mcmc.get("pmove_max", 0.55),
             pmove_min=cfg_any.mcmc.get("pmove_min", 0.5),
