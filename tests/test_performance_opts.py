@@ -7,7 +7,6 @@ from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
-import pytest
 
 from ferminet.configs import helium
 from ferminet.constants import pmap_with_donate
@@ -109,19 +108,3 @@ def test_pmap_with_donate_callable():
     assert callable(decorator)
     pmapped = decorator(dummy)
     assert callable(pmapped)
-
-
-# ── P6: _to_float hoisted helper ─────────────────────────────────────────────
-
-
-def test_to_float_helper_works_on_scalars_and_arrays():
-    """The hoisted _to_float handles both scalars and arrays."""
-
-    def _to_float(arr):
-        if hasattr(arr, "ndim") and arr.ndim > 0:
-            return float(arr.ravel()[0])
-        return float(arr)
-
-    assert _to_float(3.14) == pytest.approx(3.14)
-    assert _to_float(jnp.array(2.71)) == pytest.approx(2.71)
-    assert _to_float(jnp.array([1.0, 2.0])) == pytest.approx(1.0)
