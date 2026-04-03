@@ -302,26 +302,28 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             pmove_ref = stats[0, PMOVE]
         else:
             pmove_ref = stats[PMOVE]
-        pmove_value = pmove_ref
         width, pmoves = mcmc.update_mcmc_width(
             i + 1,
             width,
             adapt_frequency,
-            pmove_value,
+            pmove_ref,
             pmoves,
             pmove_max=cfg_any.mcmc.get("pmove_max", 0.55),
             pmove_min=cfg_any.mcmc.get("pmove_min", 0.5),
         )
 
         if (i + 1) % checkpoint_every == 0:
+            params_host, opt_state_host, data_host = jax.device_get(
+                (params, opt_state, data)
+            )
             _last_host_params = jax.tree_util.tree_map(
-                lambda x: jax.device_get(x)[0], params
+                lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, params_host
             )
             _last_host_opt_state = jax.tree_util.tree_map(
-                lambda x: jax.device_get(x)[0], opt_state
+                lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, opt_state_host
             )
             _last_host_data = jax.tree_util.tree_map(
-                lambda x: jax.device_get(x)[0], data
+                lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, data_host
             )
             _last_ckpt_step = i + 1
             checkpoint.save_checkpoint(
@@ -339,11 +341,18 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
         host_opt_state = _last_host_opt_state
         host_data = _last_host_data
     else:
-        host_params = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], params)
-        host_opt_state = jax.tree_util.tree_map(
-            lambda x: jax.device_get(x)[0], opt_state
+        params_host, opt_state_host, data_host = jax.device_get(
+            (params, opt_state, data)
         )
-        host_data = jax.tree_util.tree_map(lambda x: jax.device_get(x)[0], data)
+        host_params = jax.tree_util.tree_map(
+            lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, params_host
+        )
+        host_opt_state = jax.tree_util.tree_map(
+            lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, opt_state_host
+        )
+        host_data = jax.tree_util.tree_map(
+            lambda x: x[0] if getattr(x, "ndim", 0) > 0 else x, data_host
+        )
     return {
         "params": host_params,
         "opt_state": host_opt_state,
