@@ -10,18 +10,22 @@ def apply_jastrow_old(r_ee):
     jastrow_terms = 1.0 / (1.0 + 2.0 * r_ee) * mask
     return jnp.sum(jastrow_terms)
 
+
 def apply_jastrow_new(r_ee):
     jastrow_terms = 1.0 / (1.0 + 2.0 * r_ee)
     return jnp.sum(jnp.triu(jastrow_terms, k=1))
+
 
 def apply_hamiltonian_old(ee):
     n = ee.shape[0]
     r_ee = jnp.linalg.norm(ee, axis=-1) * (1.0 - jnp.eye(n))
     return jnp.sum(r_ee)
 
+
 def apply_hamiltonian_new(ee):
     r_ee = jnp.fill_diagonal(jnp.linalg.norm(ee, axis=-1), 0.0, inplace=False)
     return jnp.sum(r_ee)
+
 
 if __name__ == "__main__":
     n = 200
