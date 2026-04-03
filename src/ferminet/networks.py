@@ -225,8 +225,10 @@ def _masked_mean(values: Array) -> Array:
     Args:
         values: Array of shape (n, n, feat).
     """
-    summed = jnp.sum(values, axis=1) - jnp.diagonal(values, axis1=0, axis2=1).T
     n = values.shape[0]
+    diag_idx = jnp.arange(n)
+    masked_values = values.at[diag_idx, diag_idx, :].set(0.0)
+    summed = jnp.sum(masked_values, axis=1)
     denom = jnp.maximum(n - 1.0, 1.0)
     return summed / denom
 
