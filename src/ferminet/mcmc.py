@@ -66,7 +66,10 @@ def mh_accept(
     hmean1: jnp.ndarray | None = None,
     hmean2: jnp.ndarray | None = None,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray | None]:
-    """Metropolis-Hastings accept/reject step with non-finite guards."""
+    """Metropolis-Hastings accept/reject step with non-finite guards.
+
+    Optimized: accepts a pre-split subkey to avoid redundant PRNG splitting.
+    """
     rnd = jnp.log(jax.random.uniform(subkey, shape=ratio.shape))
     finite_proposal = jnp.isfinite(lp_2) & jnp.isfinite(ratio)
     cond = (ratio > rnd) & finite_proposal
