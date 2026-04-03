@@ -258,8 +258,9 @@ def construct_input_features(
     ee = jnp.reshape(pos, [1, -1, ndim]) - jnp.reshape(pos, [-1, 1, ndim])
 
     r_ae = safe_norm(ae, axis=2, keepdims=True)
-    n = ee.shape[0]
     # mask diagonal to avoid self-interaction in potentials
-    r_ee = safe_norm(ee, axis=-1) * (1.0 - jnp.eye(n))
+    n = ee.shape[0]
+    diag_idx = jnp.arange(n)
+    r_ee = safe_norm(ee, axis=-1).at[diag_idx, diag_idx].set(0.0)
 
     return ae, ee, r_ae, r_ee[..., None]

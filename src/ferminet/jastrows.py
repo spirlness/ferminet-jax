@@ -86,9 +86,7 @@ def _simple_ee_jastrow() -> tuple[JastrowInit, JastrowApply]:
         a = params["a"]
         b = params["b"]
 
-        nelec = r_ee.shape[0]
-        mask = jnp.triu(jnp.ones((nelec, nelec)), k=1)
-        jastrow_terms = a / (1.0 + b * r_ee) * mask
-        return jnp.sum(jastrow_terms)
+        jastrow_terms = a / (1.0 + b * r_ee)
+        return jnp.sum(jnp.triu(jastrow_terms, k=1))
 
     return init, apply
