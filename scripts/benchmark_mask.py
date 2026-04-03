@@ -1,6 +1,8 @@
 import time
+
 import jax
 import jax.numpy as jnp
+
 
 def apply_jastrow_old(r_ee):
     nelec = r_ee.shape[0]
