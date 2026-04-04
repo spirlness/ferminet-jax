@@ -154,11 +154,12 @@ def main() -> None:
     print(f"Steady step avg: {avg_ms:.2f} ms")
     print(f"Steady step p50: {p50_ms:.2f} ms")
     print(f"Steady step p95: {p95_ms:.2f} ms")
+    loss_host, var_host, pmove_host = jax.device_get((loss_val, var_val, pmove))
     print(
         "Last stats: "
-        f"loss={float(jax.device_get(loss_val)):.6f}, "
-        f"variance={float(jax.device_get(var_val)):.6f}, "
-        f"pmove={float(jax.device_get(pmove)):.4f}"
+        f"loss={float(loss_host):.6f}, "
+        f"variance={float(var_host):.6f}, "
+        f"pmove={float(pmove_host):.4f}"
     )
 
 
