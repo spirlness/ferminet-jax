@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import inspect
+import math
 import os
 import time
 from collections.abc import Mapping
@@ -60,13 +61,6 @@ def _filter_kwargs(fn: Any, kwargs: Mapping[str, Any]) -> dict[str, Any]:
     """Filter kwargs to those accepted by fn."""
     params = inspect.signature(fn).parameters
     return {k: v for k, v in kwargs.items() if k in params}
-
-
-def _convert_to_float(value: Any) -> float:
-    """Convert a numpy array or scalar to a Python float."""
-    if hasattr(value, "ndim") and value.ndim > 0:
-        return float(value.ravel()[0])
-    return float(value)
 
 
 def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
@@ -233,12 +227,6 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
     adapt_frequency = int(cfg_any.mcmc.adapt_frequency)
     save_path = cfg_any.log.save_path
 
-    # P6: Hoist _to_float helper out of the loop to avoid re-definition.
-    def _to_float(arr: Any) -> float:
-        if hasattr(arr, "ndim") and arr.ndim > 0:
-            return float(arr.ravel()[0])
-        return float(arr)
-
     # P4: Cache most recent host-side checkpoint data to avoid redundant
     # device_get at the end of training.
     _last_ckpt_step = -1
@@ -274,7 +262,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             pmove_val = float(stats_host[PMOVE])
             lr_val = float(stats_host[LEARNING_RATE])
 
-            if not jnp.isfinite(energy_val):
+            if not math.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
                     energy=energy_val,

@@ -256,7 +256,7 @@ def update_mcmc_width(
         return width, pmoves
 
     idx = t % adapt_frequency
-    idx = int(jnp.clip(jnp.asarray(idx), 0, pmoves.size - 1))
+    idx = min(max(idx, 0), pmoves.size - 1)
     pmoves = pmoves.at[idx].set(jnp.asarray(pmove, dtype=pmoves.dtype))
 
     if t > 0 and idx == 0:
