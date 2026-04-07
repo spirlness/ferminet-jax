@@ -171,7 +171,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             variance = jnp.reshape(variance, ())
             pmove_val = jnp.reshape(pmove_val, ())
             lr = jnp.reshape(lr, ())
-            step_stats = train_utils.StepStats(energy=energy, variance=variance, pmove=pmove_val, learning_rate=lr)
+            step_stats = train_utils.StepStats(
+                energy=energy, variance=variance, pmove=pmove_val, learning_rate=lr
+            )
 
             is_finite = jnp.isfinite(energy)
             new_params = jax.tree_util.tree_map(
@@ -213,7 +215,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             variance = jnp.reshape(variance, ())
             pmove = jnp.reshape(pmove, ())
             lr = jnp.reshape(lr, ())
-            stats = train_utils.StepStats(energy=energy, variance=variance, pmove=pmove, learning_rate=lr)
+            stats = train_utils.StepStats(
+                energy=energy, variance=variance, pmove=pmove, learning_rate=lr
+            )
 
             is_finite = jnp.isfinite(energy)
             new_params = jax.tree_util.tree_map(
