@@ -70,7 +70,7 @@ def mh_accept(
 
     Optimized: accepts a pre-split subkey to avoid redundant PRNG splitting.
     """
-    rnd = jnp.log(jax.random.uniform(subkey, shape=ratio.shape))
+    rnd = -jax.random.exponential(subkey, shape=ratio.shape)
     finite_proposal = jnp.isfinite(lp_2) & jnp.isfinite(ratio)
     cond = (ratio > rnd) & finite_proposal
     x_new = jnp.where(cond[..., None], x2, x1)
