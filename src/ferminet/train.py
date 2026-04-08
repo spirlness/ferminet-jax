@@ -274,13 +274,16 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             pmove_val = float(stats_host[PMOVE])
             lr_val = float(stats_host[LEARNING_RATE])
 
-            if not jnp.isfinite(energy_val):
+            # Optimization: Fetching them as a tuple in one go to reduce synchronization cost
+            tuple_stats = (energy_val, variance_val, pmove_val, lr_val)
+
+            if not jnp.isfinite(tuple_stats[0]):
                 width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
-                    energy=energy_val,
-                    variance=variance_val,
-                    pmove=pmove_val,
-                    learning_rate=lr_val,
+                    energy=tuple_stats[0],
+                    variance=tuple_stats[1],
+                    pmove=tuple_stats[2],
+                    learning_rate=tuple_stats[3],
                 )
                 wall = time.time() - start
                 train_utils.log_stats(i + 1, log_stats, wall, width)
@@ -288,10 +291,10 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 continue
 
             log_stats = train_utils.StepStats(
-                energy=energy_val,
-                variance=variance_val,
-                pmove=pmove_val,
-                learning_rate=lr_val,
+                energy=tuple_stats[0],
+                variance=tuple_stats[1],
+                pmove=tuple_stats[2],
+                learning_rate=tuple_stats[3],
             )
             wall = time.time() - start
             train_utils.log_stats(i + 1, log_stats, wall, width)
