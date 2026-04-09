@@ -270,17 +270,14 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
                 stats_host = stats_host[0]
 
             energy_val = float(stats_host[ENERGY])
-            variance_val = float(stats_host[VARIANCE])
-            pmove_val = float(stats_host[PMOVE])
-            lr_val = float(stats_host[LEARNING_RATE])
 
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
                     energy=energy_val,
-                    variance=variance_val,
-                    pmove=pmove_val,
-                    learning_rate=lr_val,
+                    variance=float(stats_host[VARIANCE]),
+                    pmove=float(stats_host[PMOVE]),
+                    learning_rate=float(stats_host[LEARNING_RATE]),
                 )
                 wall = time.time() - start
                 train_utils.log_stats(i + 1, log_stats, wall, width)
@@ -289,9 +286,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
             log_stats = train_utils.StepStats(
                 energy=energy_val,
-                variance=variance_val,
-                pmove=pmove_val,
-                learning_rate=lr_val,
+                variance=float(stats_host[VARIANCE]),
+                pmove=float(stats_host[PMOVE]),
+                learning_rate=float(stats_host[LEARNING_RATE]),
             )
             wall = time.time() - start
             train_utils.log_stats(i + 1, log_stats, wall, width)
