@@ -31,12 +31,6 @@ from ferminet.utils import devices as device_utils
 Array = jnp.ndarray
 ParamTree = types.ParamTree
 
-# Constants for stats array indices
-ENERGY = 0
-VARIANCE = 1
-PMOVE = 2
-LEARNING_RATE = 3
-
 make_schedule = optimizers.make_schedule
 _prepare_system = train_utils.prepare_system
 _build_network = train_utils.build_network
@@ -141,7 +135,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             key: jax.Array,
             step: jnp.ndarray,
             mcmc_width: Any,
-        ) -> tuple[Any, Any, Any, Any, jax.Array]:
+        ) -> tuple[Any, Any, Any, Any, tuple[Any, Any, Any, Any]]:
             mcmc_keys, loss_keys = _p_split(key)
             new_data, pmove = pmapped_mcmc_step(params, data, mcmc_keys, mcmc_width)
 
@@ -171,7 +165,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             variance = jnp.reshape(variance, ())
             pmove_val = jnp.reshape(pmove_val, ())
             lr = jnp.reshape(lr, ())
-            step_stats = jnp.stack([energy, variance, pmove_val, lr])
+            step_stats = (energy, variance, pmove_val, lr)
 
             is_finite = jnp.isfinite(energy)
             new_params = jax.tree_util.tree_map(
@@ -195,7 +189,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             key: jax.Array,
             step: jnp.ndarray,
             mcmc_width: Any,
-        ) -> tuple[Any, Any, Any, Any, jax.Array]:
+        ) -> tuple[Any, Any, Any, Any, tuple[Any, Any, Any, Any]]:
             key, mcmc_key, loss_key = jax.random.split(key, 3)
             new_data, pmove = mcmc_step(params, data, mcmc_key, mcmc_width)
 
@@ -213,7 +207,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             variance = jnp.reshape(variance, ())
             pmove = jnp.reshape(pmove, ())
             lr = jnp.reshape(lr, ())
-            stats = jnp.stack([energy, variance, pmove, lr])
+            stats = (energy, variance, pmove, lr)
 
             is_finite = jnp.isfinite(energy)
             new_params = jax.tree_util.tree_map(
@@ -265,14 +259,12 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
         if (i + 1) % print_every == 0:
             stats_host = jax.device_get(stats)
-            # Handle sharded stats array (e.g. from pmap)
-            if stats_host.ndim == 2:
-                stats_host = stats_host[0]
+            energy_host, variance_host, pmove_host, lr_host = stats_host
 
-            energy_val = float(stats_host[ENERGY])
-            variance_val = float(stats_host[VARIANCE])
-            pmove_val = float(stats_host[PMOVE])
-            lr_val = float(stats_host[LEARNING_RATE])
+            energy_val = _to_float(energy_host)
+            variance_val = _to_float(variance_host)
+            pmove_val = _to_float(pmove_host)
+            lr_val = _to_float(lr_host)
 
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
@@ -298,10 +290,11 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             start = time.time()
 
         # Handle potential sharded stats array
-        if stats.ndim == 2:
-            pmove_ref = stats[0, PMOVE]
+        pmove_device = stats[2]
+        if hasattr(pmove_device, "ndim") and pmove_device.ndim == 1:
+            pmove_ref = pmove_device[0]
         else:
-            pmove_ref = stats[PMOVE]
+            pmove_ref = pmove_device
         width, pmoves = mcmc.update_mcmc_width(
             i + 1,
             width,
