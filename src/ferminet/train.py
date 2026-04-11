@@ -166,12 +166,12 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             pmove_val = pmove[0] if hasattr(pmove, "__getitem__") else pmove
             step_val = step[0] if hasattr(step, "__getitem__") else step
             lr = jnp.asarray(schedule(step_val))
-            # Reshape scalar inputs to ensure they have compatible shapes for stacking
+            # Reshape scalar inputs to ensure they have compatible shapes for a tuple
             energy = jnp.reshape(energy, ())
             variance = jnp.reshape(variance, ())
             pmove_val = jnp.reshape(pmove_val, ())
             lr = jnp.reshape(lr, ())
-            step_stats = jnp.stack([energy, variance, pmove_val, lr])
+            step_stats = (energy, variance, pmove_val, lr)
 
             is_finite = jnp.isfinite(energy)
             new_params = jax.tree_util.tree_map(
@@ -208,12 +208,12 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             pmove = constants.pmean(pmove)
             lr = jnp.asarray(schedule(step))
 
-            # Reshape to ensure scalar shapes before stacking
+            # Reshape to ensure scalar shapes before a tuple
             energy = jnp.reshape(energy, ())
             variance = jnp.reshape(variance, ())
             pmove = jnp.reshape(pmove, ())
             lr = jnp.reshape(lr, ())
-            stats = jnp.stack([energy, variance, pmove, lr])
+            stats = (energy, variance, pmove, lr)
 
             is_finite = jnp.isfinite(energy)
             new_params = jax.tree_util.tree_map(
@@ -265,14 +265,19 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
         if (i + 1) % print_every == 0:
             stats_host = jax.device_get(stats)
-            # Handle sharded stats array (e.g. from pmap)
-            if stats_host.ndim == 2:
-                stats_host = stats_host[0]
+            # Handle sharded stats tuple (e.g. from pmap)
+            energy_host, variance_host, pmove_host, lr_host = stats_host
 
-            energy_val = float(stats_host[ENERGY])
-            variance_val = float(stats_host[VARIANCE])
-            pmove_val = float(stats_host[PMOVE])
-            lr_val = float(stats_host[LEARNING_RATE])
+            if hasattr(energy_host, "ndim") and energy_host.ndim > 0:
+                energy_host = energy_host[0]
+                variance_host = variance_host[0]
+                pmove_host = pmove_host[0]
+                lr_host = lr_host[0]
+
+            energy_val = float(energy_host)
+            variance_val = float(variance_host)
+            pmove_val = float(pmove_host)
+            lr_val = float(lr_host)
 
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
@@ -298,8 +303,8 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             start = time.time()
 
         # Handle potential sharded stats array
-        if stats.ndim == 2:
-            pmove_ref = stats[0, PMOVE]
+        if hasattr(stats[PMOVE], "ndim") and stats[PMOVE].ndim > 0:
+            pmove_ref = stats[PMOVE][0]
         else:
             pmove_ref = stats[PMOVE]
         width, pmoves = mcmc.update_mcmc_width(
