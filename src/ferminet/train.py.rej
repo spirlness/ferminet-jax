@@ -1,0 +1,12 @@
+--- src/ferminet/train.py
++++ src/ferminet/train.py
+@@ -274,8 +274,9 @@
+             pmove_val = float(stats_host[PMOVE])
+             lr_val = float(stats_host[LEARNING_RATE])
++            is_finite_val = float(stats_host[4])
+
+-            if not jnp.isfinite(energy_val):
++            if is_finite_val == 0.0:
+                 width = float(cfg_any.mcmc.move_width)
+                 log_stats = train_utils.StepStats(
+                     energy=energy_val,
