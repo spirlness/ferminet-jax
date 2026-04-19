@@ -36,6 +36,7 @@ ENERGY = 0
 VARIANCE = 1
 PMOVE = 2
 LEARNING_RATE = 3
+IS_FINITE = 4
 
 make_schedule = optimizers.make_schedule
 _prepare_system = train_utils.prepare_system
@@ -171,9 +172,12 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             variance = jnp.reshape(variance, ())
             pmove_val = jnp.reshape(pmove_val, ())
             lr = jnp.reshape(lr, ())
-            step_stats = jnp.stack([energy, variance, pmove_val, lr])
 
             is_finite = jnp.isfinite(energy)
+            step_stats = jnp.stack(
+                [energy, variance, pmove_val, lr, jnp.where(is_finite, 1.0, 0.0)]
+            )
+
             new_params = jax.tree_util.tree_map(
                 lambda p, np: jnp.where(is_finite, np, p), params_old, new_params
             )
@@ -213,9 +217,12 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             variance = jnp.reshape(variance, ())
             pmove = jnp.reshape(pmove, ())
             lr = jnp.reshape(lr, ())
-            stats = jnp.stack([energy, variance, pmove, lr])
 
             is_finite = jnp.isfinite(energy)
+            stats = jnp.stack(
+                [energy, variance, pmove, lr, jnp.where(is_finite, 1.0, 0.0)]
+            )
+
             new_params = jax.tree_util.tree_map(
                 lambda p, np: jnp.where(is_finite, np, p), params, new_params
             )
@@ -273,8 +280,9 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             variance_val = float(stats_host[VARIANCE])
             pmove_val = float(stats_host[PMOVE])
             lr_val = float(stats_host[LEARNING_RATE])
+            is_finite_val = float(stats_host[IS_FINITE])
 
-            if not jnp.isfinite(energy_val):
+            if is_finite_val == 0.0:
                 width = float(cfg_any.mcmc.move_width)
                 log_stats = train_utils.StepStats(
                     energy=energy_val,
