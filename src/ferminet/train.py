@@ -171,7 +171,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             variance = jnp.reshape(variance, ())
             pmove_val = jnp.reshape(pmove_val, ())
             lr = jnp.reshape(lr, ())
-            step_stats = jnp.stack([energy, variance, pmove_val, lr])
+            step_stats = (energy, variance, pmove_val, lr)
 
             is_finite = jnp.isfinite(energy)
             new_params = jax.tree_util.tree_map(
@@ -213,7 +213,7 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             variance = jnp.reshape(variance, ())
             pmove = jnp.reshape(pmove, ())
             lr = jnp.reshape(lr, ())
-            stats = jnp.stack([energy, variance, pmove, lr])
+            stats = (energy, variance, pmove, lr)
 
             is_finite = jnp.isfinite(energy)
             new_params = jax.tree_util.tree_map(
@@ -265,14 +265,18 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
 
         if (i + 1) % print_every == 0:
             stats_host = jax.device_get(stats)
-            # Handle sharded stats array (e.g. from pmap)
-            if stats_host.ndim == 2:
-                stats_host = stats_host[0]
+            # Handle sharded stats tuple (e.g. from pmap)
+            e_host, v_host, p_host, l_host = stats_host
+            if hasattr(e_host, "ndim") and e_host.ndim > 0:
+                e_host = e_host[0]
+                v_host = v_host[0]
+                p_host = p_host[0]
+                l_host = l_host[0]
 
-            energy_val = float(stats_host[ENERGY])
-            variance_val = float(stats_host[VARIANCE])
-            pmove_val = float(stats_host[PMOVE])
-            lr_val = float(stats_host[LEARNING_RATE])
+            energy_val = float(e_host)
+            variance_val = float(v_host)
+            pmove_val = float(p_host)
+            lr_val = float(l_host)
 
             if not jnp.isfinite(energy_val):
                 width = float(cfg_any.mcmc.move_width)
@@ -297,11 +301,12 @@ def train(cfg: ml_collections.ConfigDict) -> Mapping[str, Any]:
             train_utils.log_stats(i + 1, log_stats, wall, width)
             start = time.time()
 
-        # Handle potential sharded stats array
-        if stats.ndim == 2:
-            pmove_ref = stats[0, PMOVE]
+        # Handle potential sharded stats tuple
+        pmove_stat = stats[PMOVE]
+        if hasattr(pmove_stat, "ndim") and pmove_stat.ndim > 0:
+            pmove_ref = pmove_stat[0]
         else:
-            pmove_ref = stats[PMOVE]
+            pmove_ref = pmove_stat
         width, pmoves = mcmc.update_mcmc_width(
             i + 1,
             width,
