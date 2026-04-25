@@ -29,18 +29,15 @@ def test_mh_accept_rejects_non_finite_proposals():
     key = jax.random.PRNGKey(0)
     num_accepts = jnp.array(0.0)
 
-    current = mcmc.WalkerState(positions=x1, log_prob=lp1, hmean=None)
-    proposal = mcmc.WalkerState(positions=x2, log_prob=lp2, hmean=None)
+    new_positions, new_lp, accepts, new_hmean = mcmc.mh_accept(
+        x1, x2, lp1, lp2, ratio, key, num_accepts
+    )
 
-    new_walker, accepts = mcmc.mh_accept(current, proposal, ratio, key, num_accepts)
-
-    assert jnp.array_equal(
-        new_walker.positions[0], x1[0]
-    )  # non-finite proposal rejected
-    assert jnp.array_equal(new_walker.positions[1], x2[1])
+    assert jnp.array_equal(new_positions[0], x1[0])  # non-finite proposal rejected
+    assert jnp.array_equal(new_positions[1], x2[1])
     assert accepts > 0
-    assert jnp.isfinite(new_walker.log_prob[1])
-    assert new_walker.hmean is None
+    assert jnp.isfinite(new_lp[1])
+    assert new_hmean is None
 
 
 def test_log_prob_gaussian_and_width_update_behaviour():
@@ -98,25 +95,22 @@ def test_mh_update_without_atoms_modifies_positions():
 
     lp1 = jnp.zeros((2,))
     num_accepts = jnp.array(0.0)
-    state = mcmc.MCMCState(
-        data=data,
-        key=jax.random.PRNGKey(0),
-        log_prob=lp1,
-        num_accepts=num_accepts,
-        hmean=None,
-    )
-    new_state = mcmc.mh_update(
+    new_data, _, _, new_accepts, new_hmean = mcmc.mh_update(
         params={},
         f=dummy_network,
-        state=state,
+        data=data,
+        key=jax.random.PRNGKey(0),
+        lp_1=lp1,
+        num_accepts=num_accepts,
+        hmean_1=None,
         stddev=0.1,
         atoms=None,
         ndim=2,
     )
 
-    assert new_state.data.positions.shape == positions.shape
-    assert new_state.num_accepts >= 0.0
-    assert new_state.hmean is None
+    assert new_data.positions.shape == positions.shape
+    assert new_accepts >= 0.0
+    assert new_hmean is None
 
 
 def test_mh_update_with_atoms_updates_hmean():
@@ -141,23 +135,19 @@ def test_mh_update_with_atoms_updates_hmean():
     x_reshaped = jnp.reshape(positions, [batch, nelec, 1, ndim])
     hmean_init = mcmc._harmonic_mean(x_reshaped, atoms)
 
-    state = mcmc.MCMCState(
-        data=data,
-        key=jax.random.PRNGKey(0),
-        log_prob=lp1,
-        num_accepts=num_accepts,
-        hmean=hmean_init,
-    )
-
-    new_state = mcmc.mh_update(
+    new_data, _, _, new_accepts, new_hmean = mcmc.mh_update(
         params={},
         f=dummy_network,
-        state=state,
+        data=data,
+        key=jax.random.PRNGKey(0),
+        lp_1=lp1,
+        num_accepts=num_accepts,
+        hmean_1=hmean_init,
         stddev=0.1,
         atoms=atoms,
         ndim=ndim,
     )
 
-    assert new_state.data.positions.shape == positions.shape
-    assert new_state.hmean is not None
-    assert new_state.hmean.shape == hmean_init.shape
+    assert new_data.positions.shape == positions.shape
+    assert new_hmean is not None
+    assert new_hmean.shape == hmean_init.shape

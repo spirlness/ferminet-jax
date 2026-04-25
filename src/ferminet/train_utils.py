@@ -167,9 +167,11 @@ def init_mcmc_data(
     key, subkey = jax.random.split(key)
     positions = jax.random.normal(subkey, (batch_size, n_electrons * ndim))
     if atoms.shape[0] > 0:
-        atom_indices = jnp.arange(n_electrons) % atoms.shape[0]
-        offsets = atoms[atom_indices].reshape(-1)
-        positions = positions + offsets
+        for i in range(n_electrons):
+            atom_idx = i % atoms.shape[0]
+            positions = positions.at[:, i * ndim : (i + 1) * ndim].add(
+                atoms[atom_idx : atom_idx + 1]
+            )
     spins_arr = jnp.array([0] * spins[0] + [1] * spins[1])
     return types.FermiNetData(
         positions=positions,
