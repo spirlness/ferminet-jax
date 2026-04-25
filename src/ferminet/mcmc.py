@@ -3,7 +3,7 @@
 NOTE: these functions operate on batches of MCMC configurations.
 """
 
-from typing import Callable, NamedTuple, TypeVar, cast
+from typing import Callable, TypeAlias, TypeVar, cast
 
 import jax
 import jax.numpy as jnp
@@ -12,39 +12,9 @@ from jax import lax
 from ferminet.types import FermiNetData, LogFermiNetLike, ParamTree
 from ferminet.utils.numerics import EPS
 
-
-class WalkerState(NamedTuple):
-    """State of the walkers in the MCMC.
-
-    Attributes:
-        positions: Walker positions.
-        log_prob: Log probability (2 * log|psi|).
-        hmean: Harmonic mean distances (or None).
-    """
-
-    positions: jnp.ndarray
-    log_prob: jnp.ndarray
-    hmean: jnp.ndarray | None
-
-
-class MCMCState(NamedTuple):
-    """Full state of the MCMC.
-
-    Attributes:
-        data: MCMC configuration (positions, spins, etc).
-        key: RNG key.
-        log_prob: Current log probability.
-        num_accepts: Running total of accepts.
-        hmean: Current harmonic mean distances.
-    """
-
-    data: FermiNetData
-    key: jax.Array
-    log_prob: jnp.ndarray
-    num_accepts: jnp.ndarray
-    hmean: jnp.ndarray | None
-
-
+MCMCState: TypeAlias = tuple[
+    FermiNetData, jax.Array, jnp.ndarray, jnp.ndarray, jnp.ndarray | None
+]
 T = TypeVar("T")
 
 
@@ -86,47 +56,57 @@ def _harmonic_mean(x: jnp.ndarray, atoms: jnp.ndarray) -> jnp.ndarray:
 
 
 def mh_accept(
-    current: WalkerState,
-    proposal: WalkerState,
+    x1: jnp.ndarray,
+    x2: jnp.ndarray,
+    lp_1: jnp.ndarray,
+    lp_2: jnp.ndarray,
     ratio: jnp.ndarray,
     subkey: jax.Array,
     num_accepts: jnp.ndarray,
-) -> tuple[WalkerState, jnp.ndarray]:
+    hmean1: jnp.ndarray | None = None,
+    hmean2: jnp.ndarray | None = None,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray | None]:
     """Metropolis-Hastings accept/reject step with non-finite guards.
 
     Optimized: accepts a pre-split subkey to avoid redundant PRNG splitting.
     """
     rnd = jnp.log(jax.random.uniform(subkey, shape=ratio.shape))
-    finite_proposal = jnp.isfinite(proposal.log_prob) & jnp.isfinite(ratio)
+    finite_proposal = jnp.isfinite(lp_2) & jnp.isfinite(ratio)
     cond = (ratio > rnd) & finite_proposal
-    x_new = jnp.where(cond[..., None], proposal.positions, current.positions)
-    lp_new = jnp.where(cond, proposal.log_prob, current.log_prob)
+    x_new = jnp.where(cond[..., None], x2, x1)
+    lp_new = jnp.where(cond, lp_2, lp_1)
     num_accepts += jnp.sum(cond)
 
-    if current.hmean is not None and proposal.hmean is not None:
-        hmean_new = jnp.where(
-            cond[..., None, None, None], proposal.hmean, current.hmean
-        )
+    if hmean1 is not None and hmean2 is not None:
+        hmean_new = jnp.where(cond[..., None, None, None], hmean2, hmean1)
     else:
         hmean_new = None
 
-    return WalkerState(positions=x_new, log_prob=lp_new, hmean=hmean_new), num_accepts
+    return x_new, lp_new, num_accepts, hmean_new
 
 
 def mh_update(
     params: ParamTree,
     f: LogFermiNetLike,
-    state: MCMCState,
+    data: FermiNetData,
+    key: jax.Array,
+    lp_1: jnp.ndarray,
+    num_accepts: jnp.ndarray,
+    hmean_1: jnp.ndarray | None,
     stddev: float | jnp.ndarray = 0.02,
     atoms: jnp.ndarray | None = None,
     ndim: int = 3,
-) -> MCMCState:
+) -> tuple[FermiNetData, jax.Array, jnp.ndarray, jnp.ndarray, jnp.ndarray | None]:
     """Performs one MH step using all-electron move.
 
     Args:
         params: Network parameters.
         f: Log wavefunction network.
-        state: Current MCMC state.
+        data: MCMC configuration.
+        key: RNG key.
+        lp_1: Current log probability (2 * log|psi|).
+        num_accepts: Running total of accepts.
+        hmean_1: Current harmonic mean distances (or None).
         stddev: Proposal standard deviation. Can be a scalar (same for all
             electrons) or a per-electron array of shape ``(n_electrons,)``
             for shell-adaptive proposals.
@@ -134,10 +114,10 @@ def mh_update(
         ndim: Dimensionality.
 
     Returns:
-        New MCMC state.
+        (new_data, key, lp_new, num_accepts, hmean_new)
     """
-    key, subkey, subkey_accept = jax.random.split(state.key, num=3)
-    positions, spins, atoms_data, charges = _asarray_data(state.data)
+    key, subkey, subkey_accept = jax.random.split(key, num=3)
+    positions, spins, atoms_data, charges = _asarray_data(data)
     x1: jnp.ndarray = positions
 
     if atoms is None:
@@ -154,15 +134,14 @@ def mh_update(
             stddev_broad = stddev_arr
         x2 = x1 + stddev_broad * noise
         lp_2 = 2.0 * f(params, x2, spins, atoms_data, charges)
-        ratio = lp_2 - state.log_prob
+        ratio = lp_2 - lp_1
         hmean_2 = None
         x2_flat = x2
     else:
         # Asymmetric proposal scaled by harmonic mean to atoms
         n = x1.shape[0]
         x1 = jnp.reshape(x1, [n, -1, 1, ndim])
-        # Use passed hmean if available, otherwise compute it
-        hmean_1 = state.hmean
+        # Use passed hmean_1 if available, otherwise compute it
         if hmean_1 is None:
             hmean_1 = _harmonic_mean(x1, atoms)
 
@@ -175,30 +154,25 @@ def mh_update(
         # Forward and reverse probabilities for detailed balance
         lq_1 = _log_prob_gaussian(x1, x2, stddev * hmean_1)
         lq_2 = _log_prob_gaussian(x2, x1, stddev * hmean_2)
-        ratio = lp_2 + lq_2 - state.log_prob - lq_1
+        ratio = lp_2 + lq_2 - lp_1 - lq_1
 
         x1 = jnp.reshape(x1, [n, -1])
 
-    current = WalkerState(positions=x1, log_prob=state.log_prob, hmean=state.hmean)
-    proposal = WalkerState(positions=x2_flat, log_prob=lp_2, hmean=hmean_2)
-
-    new_walker, num_accepts = mh_accept(
-        current,
-        proposal,
+    x_new, lp_new, num_accepts, hmean_new = mh_accept(
+        x1,
+        x2_flat,
+        lp_1,
+        lp_2,
         ratio,
         subkey_accept,
-        state.num_accepts,
+        num_accepts,
+        hmean_1,
+        hmean_2,
     )
 
     # Update data with new positions
-    new_data = state.data._replace(positions=new_walker.positions)
-    return MCMCState(
-        data=new_data,
-        key=key,
-        log_prob=new_walker.log_prob,
-        num_accepts=num_accepts,
-        hmean=new_walker.hmean,
-    )
+    new_data = data._replace(positions=x_new)
+    return new_data, key, lp_new, num_accepts, hmean_new
 
 
 def _log_prob_gaussian(
@@ -242,7 +216,7 @@ def make_mcmc_step(
     ) -> tuple[FermiNetData, jnp.ndarray]:
         def step_fn(_: int, x: MCMCState) -> MCMCState:
             return mh_update(
-                params, batch_network, x, stddev=width, atoms=atoms, ndim=ndim
+                params, batch_network, *x, stddev=width, atoms=atoms, ndim=ndim
             )
 
         positions, spins, atoms_data, charges = _asarray_data(data)
@@ -256,15 +230,12 @@ def make_mcmc_step(
             hmean_init = None
 
         num_accepts_init = jnp.array(0.0)
-        final_state = _fori_loop(
-            0,
-            steps,
-            step_fn,
-            MCMCState(data, key, logprob, num_accepts_init, hmean_init),
+        new_data, key, _, num_accepts, _ = _fori_loop(
+            0, steps, step_fn, (data, key, logprob, num_accepts_init, hmean_init)
         )
 
-        pmove = final_state.num_accepts / (steps * batch_per_device)
-        return final_state.data, pmove
+        pmove = num_accepts / (steps * batch_per_device)
+        return new_data, pmove
 
     return mcmc_step
 
