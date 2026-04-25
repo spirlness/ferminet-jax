@@ -227,7 +227,9 @@ def _masked_mean(values: Array) -> Array:
     """
     summed = jnp.sum(values, axis=1) - jnp.diagonal(values, axis1=0, axis2=1).T
     n = values.shape[0]
-    denom = jnp.maximum(n - 1.0, 1.0)
+    # n is a static shape tuple element during tracing, so we can use pure Python
+    # to evaluate the denominator as a constant, saving a jnp.maximum dispatch.
+    denom = float(max(n - 1, 1))
     return summed / denom
 
 
@@ -603,6 +605,9 @@ def make_fermi_net(
 
         h_one = _construct_one_electron_features(r_ae, r_ae_norm)
         h_one = _augment_one_electron_features(h_one, r_ae_norm, spins_in, charges_in)
+
+        # Ensure redundant mask creation is removed to prevent O(N^2) allocations.
+        # The mask parameter was removed, so we construct h_two without it.
         h_two = _construct_two_electron_features(r_ee, r_ee_norm, spins_in)
 
         # H1: Cast to bfloat16 for Tensor Core utilisation in interaction layers.
